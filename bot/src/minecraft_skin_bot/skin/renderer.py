@@ -9,7 +9,7 @@ from minecraft_skin_bot.minecraft.models import SkinModel
 from minecraft_skin_bot.skin.parser import ParsedSkin
 
 RenderKind = Literal["head", "front", "back", "side", "three-view", "skin"]
-RENDERER_VERSION = "1"
+RENDERER_VERSION = "2"
 _SCALE = 16
 _BACKGROUND = (239, 243, 248, 255)
 
@@ -57,7 +57,7 @@ def _part(
 def _body(skin: ParsedSkin, view: str) -> Image.Image:
     canvas = Image.new("RGBA", (24 * _SCALE, 40 * _SCALE), _BACKGROUND)
     _part(canvas, skin, view, (0, 0), (32, 0), (8, 8, 8), (8, 3))
-    arm_width = 3 if skin.model == SkinModel.SLIM else 4
+    arm_width = 3 if skin.render_model == SkinModel.SLIM else 4
     if view == "side":
         _part(canvas, skin, view, (16, 16), (16, 32), (8, 12, 4), (10, 11))
         _part(canvas, skin, view, (40, 16), (40, 32), (arm_width, 12, 4), (10, 11))

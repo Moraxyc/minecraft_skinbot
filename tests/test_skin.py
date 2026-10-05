@@ -89,6 +89,20 @@ def test_opaque_atlas_background_becomes_an_absent_outer_layer() -> None:
     assert skin.image.getpixel((52, 52))[3] == 0
 
 
+def test_unknown_upload_arm_detection_preserves_official_model_metadata() -> None:
+    image = Image.open(BytesIO(coordinate_skin())).convert("RGBA")
+    image.paste((0, 0, 0, 0), (50, 16, 52, 20))
+    data = png(image)
+    uploaded = parse_skin(data)
+    assert uploaded.model == SkinModel.UNKNOWN
+    assert uploaded.render_model == SkinModel.SLIM
+    inferred_front = Image.open(BytesIO(render_skin(uploaded, "front")))
+    assert inferred_front.getpixel((4 * 16 + 8, 11 * 16 + 8)) == (239, 243, 248)
+    assert inferred_front.getpixel((5 * 16 + 8, 11 * 16 + 8)) == color(44, 20)
+    official = parse_skin(data, SkinModel.CLASSIC)
+    assert official.model == official.render_model == SkinModel.CLASSIC
+
+
 @pytest.mark.parametrize("bad", [b"", b"not a png", b"\x89PNG\r\n\x1a\n" + b"0" * 80])
 def test_malformed_png_is_a_clean_validation_error(bad: bytes) -> None:
     with pytest.raises(InvalidSkin):

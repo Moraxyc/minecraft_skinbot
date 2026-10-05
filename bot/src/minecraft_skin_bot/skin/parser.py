@@ -22,6 +22,27 @@ class ParsedSkin:
     image: Image.Image
     model: SkinModel
     legacy: bool
+    render_model: SkinModel
+
+
+def _render_model(image: Image.Image, model: SkinModel) -> SkinModel:
+    if model != SkinModel.UNKNOWN:
+        return model
+    areas = [(50, 16, 52, 20), (54, 20, 56, 32), (42, 48, 44, 52), (46, 52, 48, 64)]
+    pixels = [
+        image.getpixel((x, y))
+        for x0, y0, x1, y1 in areas
+        for x in range(x0, x1)
+        for y in range(y0, y1)
+    ]
+    # These unused slim texels follow skinview-utils' auto-detection contract.
+    if (
+        any(pixel[3] != 255 for pixel in pixels)
+        or all(pixel == (0, 0, 0, 255) for pixel in pixels)
+        or all(pixel == (255, 255, 255, 255) for pixel in pixels)
+    ):
+        return SkinModel.SLIM
+    return SkinModel.CLASSIC
 
 
 def _expand_legacy(image: Image.Image) -> Image.Image:
@@ -73,4 +94,4 @@ def parse_skin(data: bytes, model: SkinModel = SkinModel.UNKNOWN) -> ParsedSkin:
     if legacy:
         image = _expand_legacy(image)
         model = SkinModel.CLASSIC
-    return ParsedSkin(data, image, model, legacy)
+    return ParsedSkin(data, image, model, legacy, _render_model(image, model))
