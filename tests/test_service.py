@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import shutil
 from io import BytesIO
 from pathlib import Path
@@ -25,17 +26,25 @@ class Provider:
     def __init__(self) -> None:
         self.color = "red"
         self.downloads = 0
+        self.has_skin = True
+        self.cape: bytes | None = None
 
     async def resolve_username(self, username: str) -> UUID:
         return PLAYER
 
     async def get_profile(self, uuid: UUID) -> Profile:
-        return Profile(PLAYER, "Notch", SkinModel.CLASSIC, self.color, None)
+        return Profile(
+            PLAYER,
+            "Notch",
+            SkinModel.CLASSIC,
+            self.color if self.has_skin else None,
+            "cape:" + hashlib.sha256(self.cape).hexdigest() if self.cape else None,
+        )
 
     async def get_skin(self, url: str) -> bytes:
         self.downloads += 1
         await asyncio.sleep(0.01)
-        return skin_bytes(url)
+        return self.cape if url.startswith("cape:") and self.cape is not None else skin_bytes(url)
 
 
 def settings(tmp_path: Path) -> Settings:
@@ -78,7 +87,11 @@ async def test_upload_reference_expires_and_original_remains_exact(tmp_path: Pat
     assert await service.preview(asset, "skin") == original
     assert (await service.resolve(asset.reference)).skin == original
     assert "upload=" + asset.content_hash in service.viewer_url(asset)
-    await asyncio.to_thread(shutil.rmtree, tmp_path / "uploads")
+    await service.uploads.put(asset.content_hash, b"damaged cache file")
+    with pytest.raises(UtilityError) as damaged:
+        await service.resolve(asset.reference)
+    assert damaged.value.status == 410
+    assert await service.uploads.get(asset.content_hash) is None
     with pytest.raises(UtilityError) as error:
         await service.resolve(asset.reference)
     assert error.value.status == 410

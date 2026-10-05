@@ -5,7 +5,11 @@ from urllib.parse import urlsplit
 
 
 def _url(name: str, value: str) -> str:
-    parsed = urlsplit(value)
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{name} requires a valid HTTPS URL.") from exc
     local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
     if (
         not parsed.hostname

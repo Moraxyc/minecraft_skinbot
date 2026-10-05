@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -58,3 +59,26 @@ async def test_expired_upload_and_invalid_public_paths_return_clean_errors(
     assert invalid.status == 400
     media = await client.get("/api/skin/not-a-hash.png")
     assert media.status == 404
+
+
+async def test_missing_skin_and_cape_content_have_public_viewer_contracts(
+    api: tuple[TestClient[web.Request, web.Application], SkinService],
+) -> None:
+    client, service = api
+    provider = cast(Provider, service.provider)
+    provider.has_skin = False
+    path = "/api/profile/069a79f444e94726a5befca90e38aaf5"
+    missing = await client.get(path)
+    assert missing.status == 404
+    assert (await missing.json())["error"] == "Skin unavailable"
+    provider.has_skin = True
+    provider.cape = skin_bytes("yellow", height=32)
+    response = await client.get(path)
+    data = await response.json()
+    cape = await client.get(data["cape_url"].replace("https://api.example", ""))
+    assert cape.content_type == "image/png"
+    assert await cape.read() == provider.cape
+    provider.cape = skin_bytes("yellow", height=64)
+    invalid = await client.get(path)
+    assert invalid.status == 502
+    assert (await invalid.json())["error"] == "Cape unavailable"

@@ -59,7 +59,13 @@ class SkinService:
                 raise UtilityError(
                     "Upload expired", "Send the skin PNG to the bot again.", status=410
                 )
-            model = await asyncio.to_thread(self._model, data, SkinModel.UNKNOWN)
+            try:
+                model = await asyncio.to_thread(self._model, data, SkinModel.UNKNOWN)
+            except InvalidSkin as exc:
+                await self.uploads.delete(digest)
+                raise UtilityError(
+                    "Upload expired", "Send the skin PNG to the bot again.", status=410
+                ) from exc
             return SkinAsset(reference, "Uploaded skin", None, model, digest, data, None)
         uuid = (
             UUID(reference)

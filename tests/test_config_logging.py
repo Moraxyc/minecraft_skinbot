@@ -6,8 +6,12 @@ from minecraft_skin_bot.app import SafeLogFilter
 from minecraft_skin_bot.config import Settings
 
 
+@pytest.mark.parametrize(
+    "bad_url", ["https://name:password@api.example", "https://api.example:invalid"]
+)
 def test_startup_requires_cache_channel_and_rejects_unsafe_public_url(
     monkeypatch: pytest.MonkeyPatch,
+    bad_url: str,
 ) -> None:
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "synthetic")
     monkeypatch.setenv("MINI_APP_URL", "https://viewer.example")
@@ -16,7 +20,7 @@ def test_startup_requires_cache_channel_and_rejects_unsafe_public_url(
     with pytest.raises(ValueError, match="TELEGRAM_CACHE_CHAT_ID"):
         Settings.from_env()
     monkeypatch.setenv("TELEGRAM_CACHE_CHAT_ID", "-100123")
-    monkeypatch.setenv("PUBLIC_BASE_URL", "https://name:password@api.example")
+    monkeypatch.setenv("PUBLIC_BASE_URL", bad_url)
     with pytest.raises(ValueError, match="PUBLIC_BASE_URL"):
         Settings.from_env()
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://api.example")

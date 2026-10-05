@@ -26,14 +26,25 @@ class Harness:
     calls: list[str]
 
 
+@dataclass
+class StreamBody:
+    data: bytes
+
+
 @pytest.fixture
 async def upstream() -> AsyncIterator[Harness]:
     responses: dict[str, tuple[int, object]] = {}
     calls: list[str] = []
 
-    async def handle(request: web.Request) -> web.Response:
+    async def handle(request: web.Request) -> web.StreamResponse:
         calls.append(request.path)
         status, body = responses[request.path]
+        if isinstance(body, StreamBody):
+            response = web.StreamResponse(status=status)
+            await response.prepare(request)
+            await response.write(body.data)
+            await response.write_eof()
+            return response
         if body == "timeout":
             await asyncio.sleep(0.1)
         if isinstance(body, bytes):
@@ -148,3 +159,14 @@ async def test_profile_rejects_untrusted_texture_and_oversized_response(upstream
 def test_texture_allowlist_rejects_ssrf_and_arbitrary_paths(url: str) -> None:
     with pytest.raises(ValueError):
         texture_url(url)
+
+
+@pytest.mark.parametrize("body", [b"not a PNG", StreamBody(b"\x89PNG\r\n\x1a\n" + b"x" * 1048576)])
+async def test_texture_download_rejects_invalid_png_and_oversized_chunked_body(
+    upstream: Harness,
+    body: object,
+) -> None:
+    upstream.responses["/texture/" + TEXTURE] = (200, body)
+    with pytest.raises(UtilityError) as error:
+        await upstream.provider.get_skin("https://textures.minecraft.net/texture/" + TEXTURE)
+    assert error.value.status == 502
