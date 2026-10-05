@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { initializeTelegram, shareInline, telegramShareURL, type TelegramWebApp } from '../src/telegram';
+import { copyInlineQuery, initializeTelegram, shareInline, telegramBotURL, type TelegramWebApp } from '../src/telegram';
 
 function telegram(overrides: Partial<TelegramWebApp> = {}): TelegramWebApp {
   return {
@@ -14,25 +14,34 @@ function telegram(overrides: Partial<TelegramWebApp> = {}): TelegramWebApp {
 describe('Telegram inline handoff', () => {
   it.each(['skin 069a79f444e94726a5befca90e38aaf5', `view upload:${'a'.repeat(64)}`])('shares self-contained content through the chat chooser', (query) => {
     const switchInlineQuery = vi.fn();
-    expect(shareInline(telegram({ switchInlineQuery }), query, 'minecraft_skin_bot')).toBe('inline');
+    expect(shareInline(telegram({ switchInlineQuery }), query)).toBe('inline');
     expect(switchInlineQuery).toHaveBeenCalledWith(query, ['users', 'groups', 'channels']);
   });
-  it.each(['older client', 'unavailable launch context'])('opens a public inline link for %s', (reason) => {
-    const openTelegramLink = vi.fn();
+  it.each(['older client', 'unavailable launch context'])('offers a copyable query for %s', (reason) => {
     const app = telegram({
-      openTelegramLink,
       isVersionAtLeast: () => reason !== 'older client',
       switchInlineQuery: () => { throw new Error('WebAppInlineModeDisabled'); },
     });
-    expect(shareInline(app, 'view 1234', 'minecraft_skin_bot')).toBe('link');
-    const url = new URL(openTelegramLink.mock.calls[0][0]);
+    expect(shareInline(app, 'view 1234')).toBe('manual');
+    const url = new URL(telegramBotURL('minecraft_skin_bot') ?? '');
     expect(url.origin).toBe('https://t.me');
     expect(url.pathname).toBe('/minecraft_skin_bot');
-    expect(url.searchParams.get('startinline')).toBe('view 1234');
+    expect(url.search).toBe('');
   });
   it('keeps a manual handoff when a bot link is unavailable', () => {
-    expect(shareInline(undefined, 'view 1234', '')).toBe('manual');
-    expect(telegramShareURL('https://attacker.example', 'view 1234')).toBeNull();
+    expect(shareInline(undefined, 'view 1234')).toBe('manual');
+    expect(telegramBotURL('https://attacker.example')).toBeNull();
+  });
+  it.each(['unavailable', 'rejected'])('keeps inline text selectable when clipboard is %s', async (mode) => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: mode === 'unavailable' ? undefined : { writeText: vi.fn().mockRejectedValue(new Error('Permission denied')) } });
+    const input = document.createElement('textarea');
+    input.value = '@minecraft_skin_bot view upload:' + 'a'.repeat(64);
+    document.body.append(input);
+    expect(await copyInlineQuery(input)).toBe(false);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+    expect(document.activeElement).toBe(input);
+    input.remove();
   });
 });
 

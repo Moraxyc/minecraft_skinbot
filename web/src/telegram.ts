@@ -49,28 +49,30 @@ export function initializeTelegram(app: TelegramWebApp | undefined): () => void 
   return () => { for (const event of events) app.offEvent(event, update); };
 }
 
-export function telegramShareURL(botUsername: string, query: string): string | null {
+export function telegramBotURL(botUsername: string): string | null {
   const name = botUsername.replace(/^@/, '');
   if (!/^[a-z0-9_]{5,32}$/i.test(name)) return null;
-  const url = new URL(`https://t.me/${name}`);
-  url.searchParams.set('startinline', query);
-  return url.href;
+  return `https://t.me/${name}`;
 }
 
-export function shareInline(app: TelegramWebApp | undefined, query: string, botUsername: string): 'inline' | 'link' | 'manual' {
+export function shareInline(app: TelegramWebApp | undefined, query: string): 'inline' | 'manual' {
   if (app?.switchInlineQuery && app.isVersionAtLeast?.('6.7')) {
     try {
       app.switchInlineQuery(query, ['users', 'groups', 'channels']);
       return 'inline';
-    } catch { /* A launch context can reject switching; the public link remains available. */ }
-  }
-  const url = telegramShareURL(botUsername, query);
-  if (url) {
-    try {
-      if (app?.openTelegramLink) app.openTelegramLink(url);
-      else window.location.assign(url);
-    } catch { return 'manual'; }
-    return 'link';
+    } catch { /* A launch context can reject switching; copyable query guidance remains available. */ }
   }
   return 'manual';
+}
+
+export async function copyInlineQuery(input: HTMLTextAreaElement): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(input.value);
+    return true;
+  } catch {
+    input.focus();
+    input.select();
+    input.setSelectionRange(0, input.value.length);
+    return false;
+  }
 }

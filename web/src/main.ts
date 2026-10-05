@@ -1,5 +1,5 @@
 import { inlineReference, loadProfile, parseReference, ViewerError } from './api';
-import { getTelegram, initializeTelegram, shareInline, telegramShareURL } from './telegram';
+import { copyInlineQuery, getTelegram, initializeTelegram, shareInline, telegramBotURL } from './telegram';
 import { Viewer, type AnimationName } from './viewer';
 import './style.css';
 
@@ -20,15 +20,19 @@ let viewer: Viewer | undefined;
 function share(kind: 'skin' | 'view'): void {
   if (!reference) return;
   const query = `${kind} ${inlineReference(reference)}`;
-  const outcome = shareInline(app, query, botUsername);
+  const outcome = shareInline(app, query);
   const fallback = element<HTMLAnchorElement>('share-fallback');
-  const url = telegramShareURL(botUsername, query);
+  const url = telegramBotURL(botUsername);
+  fallback.hidden = outcome !== 'manual' || !url;
   if (url) {
     fallback.href = url;
-    fallback.hidden = false;
   }
+  const input = element<HTMLTextAreaElement>('inline-query');
+  input.value = url ? `@${botUsername.replace(/^@/, '')} ${query}` : query;
+  input.hidden = outcome !== 'manual';
+  element('copy-query').hidden = outcome !== 'manual';
   element('share-status').textContent = outcome === 'manual'
-    ? `Use this inline query in Telegram: ${query}`
+    ? url ? 'Copy this query and paste it into your target Telegram chat.' : 'Use your bot’s username followed by this query in your target Telegram chat.'
     : 'Choose a chat, then select the inline result.';
 }
 
@@ -72,6 +76,19 @@ for (const button of animationButtons) {
 }
 element('share-skin').addEventListener('click', () => share('skin'));
 element('share-view').addEventListener('click', () => share('view'));
+element('copy-query').addEventListener('click', () => {
+  void copyInlineQuery(element<HTMLTextAreaElement>('inline-query')).then((copied) => {
+    element('share-status').textContent = copied
+      ? 'Copied. Paste into your target Telegram chat.'
+      : 'Select and copy the query, then paste it into your target Telegram chat.';
+  });
+});
+element<HTMLAnchorElement>('share-fallback').addEventListener('click', (event) => {
+  if (app?.openTelegramLink) {
+    try { app.openTelegramLink((event.currentTarget as HTMLAnchorElement).href); event.preventDefault(); }
+    catch { /* The regular bot link also works as browser navigation. */ }
+  }
+});
 document.addEventListener('visibilitychange', () => { if (viewer) viewer.skin.renderPaused = document.hidden; });
 window.addEventListener('pagehide', () => { viewer?.dispose(); cleanupTelegram(); }, { once: true });
 void start();

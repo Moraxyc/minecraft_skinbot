@@ -39,7 +39,9 @@
         </div>
       </fieldset>
       <p id="share-status" class="hint" role="status"></p>
-      <a id="share-fallback" class="share-fallback" hidden>Continue in Telegram</a>
+      <textarea id="inline-query" aria-label="Inline query" rows="4" readonly hidden></textarea>
+      <button id="copy-query" type="button" class="secondary" hidden>Copy inline query</button>
+      <a id="share-fallback" class="share-fallback" hidden>Open Telegram</a>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

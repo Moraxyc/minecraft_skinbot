@@ -92,7 +92,9 @@ test('mobile WebGL viewer loads, rotates, zooms, resizes, themes, and shares bot
     (window as unknown as { Telegram: { WebApp: { switchInlineQuery(): void } } }).Telegram.WebApp.switchInlineQuery = () => { throw new Error('WebAppInlineModeDisabled'); };
   });
   await page.getByRole('button', { name: 'Share Three-view' }).click();
-  expect(await page.evaluate(() => new URL((window as unknown as { lastTelegramLink: string }).lastTelegramLink).searchParams.get('startinline'))).toBe(`view upload:${hash}`);
+  await expect(page.getByLabel('Inline query', { exact: true })).toHaveValue(`@minecraft_skin_bot view upload:${hash}`);
+  await expect(page.getByRole('link', { name: 'Open Telegram' })).toHaveAttribute('href', 'https://t.me/minecraft_skin_bot');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test('real renderer respects explicit slim metadata, layers, reset, legacy conversion, and touch controls', async ({ page }) => {
@@ -161,4 +163,24 @@ test('expired upload remains recoverable in the Mini App', async ({ page }) => {
   await page.goto(`/?upload=${hash}`);
   await expect(page.locator('#status')).toHaveText('This upload has expired. Send the PNG to the bot again.');
   await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
+});
+
+test('plain browser shares a selectable query and opens the documented bot link', async ({ page }) => {
+  await installFixtures(page);
+  await page.route('https://telegram.org/js/telegram-web-app.js', (route) => route.fulfill({ body: 'delete window.Telegram;', contentType: 'text/javascript' }));
+  await page.goto(`/?upload=${hash}`);
+  await expect(page.getByRole('button', { name: 'Share Three-view' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Share Three-view' }).click();
+  const input = page.getByLabel('Inline query', { exact: true });
+  await expect(input).toHaveValue(`@minecraft_skin_bot view upload:${hash}`);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() { return Promise.reject(new Error('Permission denied')); } } }));
+  await page.getByRole('button', { name: 'Copy inline query' }).click();
+  await expect(page.locator('#share-status')).toHaveText('Select and copy the query, then paste it into your target Telegram chat.');
+  expect(await input.evaluate((element) => (element as HTMLTextAreaElement).selectionEnd)).toBe(`@minecraft_skin_bot view upload:${hash}`.length);
+  await page.setViewportSize({ width: 320, height: 568 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.route('https://t.me/minecraft_skin_bot', (route) => route.fulfill({ body: 'Telegram bot handoff', contentType: 'text/plain' }));
+  await page.getByRole('link', { name: 'Open Telegram' }).click();
+  await page.waitForURL('https://t.me/minecraft_skin_bot');
+  expect(page.url()).toBe('https://t.me/minecraft_skin_bot');
 });

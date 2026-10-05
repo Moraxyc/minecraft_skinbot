@@ -47,13 +47,13 @@ export function inlineReference(reference: SkinReference): string {
 export class ViewerError extends Error {}
 
 function assetURL(value: unknown, kind: 'skin' | 'cape', base: URL): string {
-  if (typeof value !== 'string') throw new ViewerError('Skin data is unavailable. Try again.');
+  if (typeof value !== 'string') throw new ViewerError('Reopen the skin to load its data.');
   const url = new URL(value, base);
   const prefix = base.pathname.replace(/\/$/, '');
   const path = url.pathname.slice(prefix.length);
   if (url.origin !== base.origin || !url.pathname.startsWith(prefix + '/') || !new RegExp(`^/api/${kind}/[a-f0-9]{64}\\.png$`).test(path)
     || url.search || url.hash || url.username || url.password) {
-    throw new ViewerError('Skin data is unavailable. Try again.');
+    throw new ViewerError('Reopen the skin to load its data.');
   }
   return url.href;
 }
@@ -68,20 +68,20 @@ export async function loadProfile(reference: SkinReference, apiBase: string): Pr
       credentials: 'omit',
     });
   } catch {
-    throw new ViewerError('Skin service is busy. Try again.');
+    throw new ViewerError('Skin service is busy. Reopen the skin to try again.');
   }
   if (response.status === 410 || (response.status === 404 && reference.kind === 'upload')) {
     throw new ViewerError('This upload has expired. Send the PNG to the bot again.');
   }
   if (response.status === 404) throw new ViewerError('Player not found. Check the UUID.');
-  if (!response.ok) throw new ViewerError('Skin service is busy. Try again.');
+  if (!response.ok) throw new ViewerError('Skin service is busy. Reopen the skin to try again.');
   const value: unknown = await response.json().catch(() => null);
-  if (typeof value !== 'object' || value === null) throw new ViewerError('Skin data is unavailable. Try again.');
+  if (typeof value !== 'object' || value === null) throw new ViewerError('Reopen the skin to load its data.');
   const data = value as Record<string, unknown>;
   if (typeof data.name !== 'string' || !['classic', 'slim', 'unknown'].includes(String(data.model))
     || data.reference !== inlineReference(reference)
     || (reference.kind === 'profile' ? data.uuid !== reference.id : data.uuid !== null)) {
-    throw new ViewerError('Skin data is unavailable. Try again.');
+    throw new ViewerError('Reopen the skin to load its data.');
   }
   return {
     uuid: data.uuid as string | null,

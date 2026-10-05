@@ -47,7 +47,7 @@ describe('profile API boundary', () => {
     { ...profile, model: 'unexpected' },
   ])('rejects invalid identities and asset locations', async (payload) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
-    await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Skin data is unavailable');
+    await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Reopen the skin to load its data.');
   });
   it('explains expired uploads with a recoverable action', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 410 })));
@@ -55,10 +55,10 @@ describe('profile API boundary', () => {
   });
   it.each([null, { uuid }, 'invalid'])('handles malformed provider data as a clean error', async (payload) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
-    await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Skin data is unavailable');
+    await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Reopen the skin to load its data.');
   });
   it('turns transport failure into concise retry guidance', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('raw network details')));
-    await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Skin service is busy. Try again.');
+    await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Skin service is busy. Reopen the skin to try again.');
   });
 });

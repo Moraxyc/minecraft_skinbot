@@ -23,7 +23,7 @@ body { margin: 0; min-width: 240px; }
 header { margin-bottom: 14px; }
 .eyebrow { margin: 0 0 4px; font-size: 12px; color: var(--tg-theme-hint-color, #708499); letter-spacing: .03em; }
 h1 { margin: 0; font-size: 25px; line-height: 1.2; overflow-wrap: anywhere; }
-.hint { color: var(--tg-theme-hint-color, #708499); font-size: 13px; margin: 7px 0 0; line-height: 1.45; }
+.hint { color: var(--tg-theme-hint-color, #708499); font-size: 13px; margin: 7px 0 0; line-height: 1.45; overflow-wrap: anywhere; }
 .stage {
   height: clamp(240px, 46svh, 430px);
   width: 100%;
@@ -64,6 +64,7 @@ fieldset:disabled { opacity: .45; }
 .animations button, .sharing button { flex: 1; }
 .sharing { margin-top: 17px; }
 .share-fallback { display: inline-block; padding: 10px 0; color: var(--tg-theme-button-color, #2481cc); font-size: 14px; }
+textarea { display: block; width: 100%; margin: 10px 0; padding: 10px; border: 1px solid var(--tg-theme-hint-color, #708499); border-radius: 8px; background: var(--tg-theme-secondary-bg-color, #edf2f6); color: inherit; font: 13px/1.4 monospace; resize: none; }
 @media (prefers-color-scheme: dark) {
   :root { --tg-theme-bg-color: #17212b; --tg-theme-text-color: #f5f5f5; --tg-theme-hint-color: #a0abb5; --tg-theme-secondary-bg-color: #232e3c; }
 }
