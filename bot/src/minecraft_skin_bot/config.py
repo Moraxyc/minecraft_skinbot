@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -12,6 +12,7 @@ def _url(name: str, value: str) -> str:
         or parsed.username
         or parsed.password
         or parsed.fragment
+        or (name == "PUBLIC_BASE_URL" and parsed.query)
         or (parsed.scheme != "https" and not (local and parsed.scheme == "http"))
     ):
         raise ValueError(f"{name} requires an HTTPS URL (HTTP is allowed on localhost).")
@@ -20,8 +21,8 @@ def _url(name: str, value: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    bot_token: str
-    cache_chat_id: int | None
+    bot_token: str = field(repr=False)
+    cache_chat_id: int
     mini_app_url: str
     public_base_url: str
     cache_dir: Path = Path("cache")
@@ -39,10 +40,12 @@ class Settings:
         mini_app_url = _url("MINI_APP_URL", os.environ.get("MINI_APP_URL", ""))
         public_base_url = _url("PUBLIC_BASE_URL", os.environ.get("PUBLIC_BASE_URL", ""))
         cache_chat = os.environ.get("TELEGRAM_CACHE_CHAT_ID", "")
+        if not cache_chat:
+            raise ValueError("Set TELEGRAM_CACHE_CHAT_ID to enable all four inline media results.")
         try:
             settings = cls(
                 bot_token=token,
-                cache_chat_id=int(cache_chat) if cache_chat else None,
+                cache_chat_id=int(cache_chat),
                 mini_app_url=mini_app_url,
                 public_base_url=public_base_url,
                 cache_dir=Path(os.environ.get("CACHE_DIR", "cache")),
