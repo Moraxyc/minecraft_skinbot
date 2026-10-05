@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f5f5f5" />
+    <title>Minecraft Skin Viewer</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <p class="eyebrow">Minecraft Skin Viewer</p>
+        <h1 id="name">3D skin viewer</h1>
+        <p id="details" class="hint">Open a skin from Telegram.</p>
+      </header>
+      <section id="stage" class="stage" aria-label="Interactive 3D skin">
+        <canvas id="viewer" aria-label="Drag to rotate. Pinch or scroll to zoom."></canvas>
+        <p id="status" class="status" role="status">Open a skin from the bot.</p>
+      </section>
+      <p class="hint gesture-hint">Drag to rotate · Pinch to zoom</p>
+      <fieldset id="controls" disabled>
+        <div class="toolbar">
+          <button id="reset" type="button" class="secondary">Reset camera</button>
+          <div class="layers" aria-label="Skin layers">
+            <label><input id="inner" type="checkbox" checked /> Inner</label>
+            <label><input id="outer" type="checkbox" checked /> Outer</label>
+          </div>
+        </div>
+        <p class="control-label" id="animation-label">Animation</p>
+        <div class="animations" role="group" aria-labelledby="animation-label">
+          <button type="button" data-animation="idle" aria-pressed="true" class="secondary">Idle</button>
+          <button type="button" data-animation="walk" aria-pressed="false" class="secondary">Walk</button>
+          <button type="button" data-animation="run" aria-pressed="false" class="secondary">Run</button>
+        </div>
+        <div class="sharing">
+          <button id="share-skin" type="button">Share Skin</button>
+          <button id="share-view" type="button" class="secondary">Share Three-view</button>
+        </div>
+      </fieldset>
+      <p id="share-status" class="hint" role="status"></p>
+      <a id="share-fallback" class="share-fallback" hidden>Continue in Telegram</a>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
