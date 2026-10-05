@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+.venv
+.pnpm-store
+cache
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache

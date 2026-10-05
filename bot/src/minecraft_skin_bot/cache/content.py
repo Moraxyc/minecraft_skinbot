@@ -46,6 +46,9 @@ class FileCache:
     async def put(self, key: str, data: bytes) -> None:
         await asyncio.to_thread(self._write, key, data)
 
+    async def delete(self, key: str) -> None:
+        await asyncio.to_thread(self._path(key).unlink, missing_ok=True)
+
     async def get_or_create(
         self, key: str, factory: Callable[[], Awaitable[bytes]], *, ttl: int | None = None
     ) -> bytes:
