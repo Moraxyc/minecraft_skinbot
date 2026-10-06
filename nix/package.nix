@@ -11,7 +11,7 @@ let
     fileset = lib.fileset.unions [
       ../pyproject.toml
       ../README.md
-      (lib.fileset.fileFilter (file: file.hasExt "py") ../bot)
+      (lib.fileset.fileFilter (file: file.hasExt "py" || file.hasExt "po" || file.hasExt "mo") ../bot)
     ];
   };
   overlay = workspace.mkPyprojectOverlay { sourcePreference = "wheel"; };

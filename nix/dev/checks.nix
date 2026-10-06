@@ -105,19 +105,32 @@
                 nativeBuildInputs = [ environment ];
               }
               ''
+                python - <<'PY'
+                import gettext
+                from importlib.resources import files
+
+                catalogs = files("minecraft_skin_bot").joinpath("locales")
+                translation = gettext.translation("messages", localedir=str(catalogs), languages=["zh_Hans"])
+                assert translation.gettext("Open 3D") == "打开 3D"
+                PY
                 cp -r ${
                   lib.fileset.toSource {
                     root = ../../.;
                     fileset = lib.fileset.unions [
                       ../../pyproject.toml
                       ../../README.md
-                      (lib.fileset.fileFilter (file: file.hasExt "py") ../../bot)
+                      (lib.fileset.fileFilter (file: file.hasExt "py" || file.hasExt "po" || file.hasExt "mo") ../../bot)
                       (lib.fileset.fileFilter (file: file.hasExt "py" || file.hasExt "png") ../../tests)
                     ];
                   }
                 } source
                 chmod -R u+w source
                 cd source
+                cp -r bot/src/minecraft_skin_bot/locales "$TMPDIR/catalogs"
+                pybabel compile -d "$TMPDIR/catalogs" -D messages
+                for catalog in bot/src/minecraft_skin_bot/locales/*/LC_MESSAGES/messages.mo; do
+                  cmp "$catalog" "$TMPDIR/catalogs/''${catalog#bot/src/minecraft_skin_bot/locales/}"
+                done
                 export MYPY_CACHE_DIR="$TMPDIR/mypy"
                 ruff check .
                 ruff format --check .

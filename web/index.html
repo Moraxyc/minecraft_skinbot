@@ -10,38 +10,38 @@
   <body>
     <main class="app">
       <header>
-        <p class="eyebrow">Minecraft Skin Viewer</p>
-        <h1 id="name">3D skin viewer</h1>
-        <p id="details" class="hint">Open a skin from Telegram.</p>
+        <p class="eyebrow" data-i18n="title">Minecraft Skin Viewer</p>
+        <h1 id="name" data-i18n="heading">3D skin viewer</h1>
+        <p id="details" data-i18n="openTelegramSkin" class="hint">Open a skin from Telegram.</p>
       </header>
-      <section id="stage" class="stage" aria-label="Interactive 3D skin">
-        <canvas id="viewer" aria-label="Drag to rotate. Pinch or scroll to zoom."></canvas>
-        <p id="status" class="status" role="status">Open a skin from the bot.</p>
+      <section id="stage" data-i18n-aria="stage" class="stage" aria-label="Interactive 3D skin">
+        <canvas id="viewer" data-i18n-aria="canvas" aria-label="Drag to rotate. Pinch or scroll to zoom."></canvas>
+        <p id="status" data-i18n="openBotSkin" class="status" role="status">Open a skin from the bot.</p>
       </section>
-      <p class="hint gesture-hint">Drag to rotate · Pinch to zoom</p>
+      <p class="hint gesture-hint" data-i18n="gestures">Drag to rotate · Pinch to zoom</p>
       <fieldset id="controls" disabled>
         <div class="toolbar">
-          <button id="reset" type="button" class="secondary">Reset camera</button>
-          <div class="layers" aria-label="Skin layers">
-            <label><input id="inner" type="checkbox" checked /> Inner</label>
-            <label><input id="outer" type="checkbox" checked /> Outer</label>
+          <button id="reset" data-i18n="reset" type="button" class="secondary">Reset camera</button>
+          <div class="layers" data-i18n-aria="layers" aria-label="Skin layers">
+            <label><input id="inner" type="checkbox" checked /> <span data-i18n="inner">Inner</span></label>
+            <label><input id="outer" type="checkbox" checked /> <span data-i18n="outer">Outer</span></label>
           </div>
         </div>
-        <p class="control-label" id="animation-label">Animation</p>
+        <p class="control-label" id="animation-label" data-i18n="animation">Animation</p>
         <div class="animations" role="group" aria-labelledby="animation-label">
-          <button type="button" data-animation="idle" aria-pressed="true" class="secondary">Idle</button>
-          <button type="button" data-animation="walk" aria-pressed="false" class="secondary">Walk</button>
-          <button type="button" data-animation="run" aria-pressed="false" class="secondary">Run</button>
+          <button type="button" data-animation="idle" data-i18n="idle" aria-pressed="true" class="secondary">Idle</button>
+          <button type="button" data-animation="walk" data-i18n="walk" aria-pressed="false" class="secondary">Walk</button>
+          <button type="button" data-animation="run" data-i18n="run" aria-pressed="false" class="secondary">Run</button>
         </div>
         <div class="sharing">
-          <button id="share-skin" type="button">Share Skin</button>
-          <button id="share-view" type="button" class="secondary">Share Three-view</button>
+          <button id="share-skin" data-i18n="shareSkin" type="button">Share Skin</button>
+          <button id="share-view" data-i18n="shareView" type="button" class="secondary">Share Three-view</button>
         </div>
       </fieldset>
       <p id="share-status" class="hint" role="status"></p>
-      <textarea id="inline-query" aria-label="Inline query" rows="4" readonly hidden></textarea>
-      <button id="copy-query" type="button" class="secondary" hidden>Copy inline query</button>
-      <a id="share-fallback" class="share-fallback" hidden>Open Telegram</a>
+      <textarea id="inline-query" data-i18n-aria="inlineQuery" aria-label="Inline query" rows="4" readonly hidden></textarea>
+      <button id="copy-query" data-i18n="copyQuery" type="button" class="secondary" hidden>Copy inline query</button>
+      <a id="share-fallback" data-i18n="openTelegram" class="share-fallback" hidden>Open Telegram</a>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

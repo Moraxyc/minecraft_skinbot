@@ -13,13 +13,24 @@ from aiogram.types import (
     InlineQueryResultCachedPhoto,
     InlineQueryResultsButton,
     InlineQueryResultUnion,
+    InputMediaDocument,
+    InputMediaPhoto,
+    InputRichMessage,
+    InputRichMessageContent,
     WebAppInfo,
 )
 
 from minecraft_skin_bot.config import Settings
 from minecraft_skin_bot.service import SkinAsset, SkinService
 from minecraft_skin_bot.skin.renderer import RenderKind
-from minecraft_skin_bot.telegram.formatting import caption, share_markup
+from minecraft_skin_bot.telegram.formatting import (
+    asset_name,
+    caption,
+    preview_markup,
+    rich_profile,
+    share_markup,
+)
+from minecraft_skin_bot.telegram.i18n import tr
 from minecraft_skin_bot.telegram.media import MediaCacheUnavailable, cache_access_error
 
 InlineResult = InlineQueryResultUnion
@@ -105,10 +116,15 @@ class InlineSkins:
         ).decode()
 
     async def results(
-        self, bot: Bot, query: SkinQuery, *, inline_query_id: str | None = None
+        self,
+        bot: Bot,
+        query: SkinQuery,
+        *,
+        inline_query_id: str | None = None,
+        locale: str | None = None,
     ) -> tuple[list[InlineResult], InlineQueryResultsButton]:
         asset = await self.service.resolve(query.reference)
-        markup = share_markup(asset, self.bot_username)
+        markup = share_markup(asset, self.bot_username, locale=locale)
         result_ids = asset.content_hash[:32]
         results: list[InlineResult] = []
         previews: tuple[tuple[str, RenderKind], ...] = (
@@ -119,24 +135,32 @@ class InlineSkins:
         try:
             for label, kind in previews:
                 file_id = await self.file_id(bot, asset, kind)
+                rich = (
+                    InputRichMessageContent(
+                        rich_message=await self.rich_message(bot, asset, kind, locale=locale)
+                    )
+                    if kind == "front" and self.settings.rich_messages
+                    else None
+                )
                 results.append(
                     InlineQueryResultCachedPhoto(
                         id=f"{kind}:{result_ids}",
                         photo_file_id=file_id,
-                        title=label,
-                        description=asset.name,
-                        caption=caption(asset),
+                        title=tr(label, locale),
+                        description=asset_name(asset, locale),
+                        caption=caption(asset, locale=locale),
                         parse_mode="HTML",
-                        reply_markup=markup,
+                        reply_markup=None if rich else markup,
+                        input_message_content=rich,
                     )
                 )
             results.append(
                 InlineQueryResultCachedDocument(
                     id=f"original:{result_ids}",
-                    title="Original Skin",
-                    description="Minecraft skin PNG",
+                    title=tr("Original Skin", locale),
+                    description=tr("Minecraft skin PNG", locale),
                     document_file_id=await self.file_id(bot, asset, "skin"),
-                    caption=caption(asset),
+                    caption=caption(asset, locale=locale),
                     parse_mode="HTML",
                     reply_markup=markup,
                 )
@@ -152,12 +176,31 @@ class InlineSkins:
                 },
             )
             return [], InlineQueryResultsButton(
-                text="Previews unavailable · Open 3D",
+                text=tr("Previews unavailable · Open 3D", locale),
                 web_app=WebAppInfo(url=self.service.viewer_url(asset)),
             )
         preferred = {"skin": 0, "view": 1, "head": 2}[query.preferred]
         if preferred:
             results.insert(0, results.pop(preferred))
         return results, InlineQueryResultsButton(
-            text="Open interactive 3D", web_app=WebAppInfo(url=self.service.viewer_url(asset))
+            text=tr("Open interactive 3D", locale),
+            web_app=WebAppInfo(url=self.service.viewer_url(asset)),
         )
+
+    async def rich_message(
+        self,
+        bot: Bot,
+        asset: SkinAsset,
+        kind: RenderKind,
+        *,
+        locale: str | None = None,
+    ) -> InputRichMessage:
+        """Build inline rich content using files already uploaded by this bot."""
+        file_id = await self.file_id(bot, asset, kind)
+        media = (
+            InputMediaDocument(media=file_id) if kind == "skin" else InputMediaPhoto(media=file_id)
+        )
+        markup = preview_markup(
+            asset, self.service, self.bot_username, private=False, locale=locale
+        )
+        return rich_profile(asset, media, markup, locale=locale)

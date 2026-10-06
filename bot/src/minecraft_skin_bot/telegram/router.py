@@ -1,5 +1,6 @@
 """Stateless query, upload, preview and inline Telegram entry points."""
 
+import asyncio
 import logging
 from html import escape
 from io import BytesIO
@@ -32,7 +33,9 @@ from minecraft_skin_bot.telegram.formatting import (
     preview_markup,
     rich_profile,
 )
+from minecraft_skin_bot.telegram.i18n import SkinI18nMiddleware, i18n, locale_from_user, tr
 from minecraft_skin_bot.telegram.inline import InlineSkins, parse_query
+from minecraft_skin_bot.telegram.media import MediaCacheUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +53,13 @@ STALE_QUERY_MARKERS = ("query is too old", "query id is invalid", "response time
 MEDIA_ERROR = UtilityError("Skins unavailable", "Send the player name again in a moment.")
 
 
-def error_text(error: UtilityError) -> str:
-    return f"<b>{escape(error.title)}</b>\n\n{escape(error.message)}"
+def error_message(error: UtilityError, locale: str | None = None) -> str:
+    text = tr(error.message_template, locale)
+    return text.format(**error.params) if error.params else text
+
+
+def error_text(error: UtilityError, locale: str | None = None) -> str:
+    return f"<b>{escape(tr(error.title, locale))}</b>\n\n{escape(error_message(error, locale))}"
 
 
 def description(error: TelegramAPIError) -> str:
@@ -78,21 +86,23 @@ def stale_query(error: TelegramAPIError) -> bool:
     return any(marker in text for marker in STALE_QUERY_MARKERS)
 
 
-def failure_article(identifier: str, error: UtilityError) -> InlineQueryResultArticle:
+def failure_article(
+    identifier: str, error: UtilityError, locale: str | None = None
+) -> InlineQueryResultArticle:
     return InlineQueryResultArticle(
         id=identifier,
-        title=error.title,
-        description=error.message,
+        title=tr(error.title, locale),
+        description=error_message(error, locale),
         input_message_content=InputTextMessageContent(
-            message_text=error_text(error), parse_mode="HTML"
+            message_text=error_text(error, locale), parse_mode="HTML"
         ),
     )
 
 
 def input_media(
-    file: BufferedInputFile, asset: SkinAsset, kind: RenderKind
+    file: BufferedInputFile, asset: SkinAsset, kind: RenderKind, locale: str | None = None
 ) -> InputMediaPhoto | InputMediaDocument:
-    caption_text = caption(asset)
+    caption_text = caption(asset, locale=locale)
     if kind == "skin":
         return InputMediaDocument(media=file, caption=caption_text, parse_mode="HTML")
     return InputMediaPhoto(media=file, caption=caption_text, parse_mode="HTML")
@@ -155,9 +165,15 @@ class SkinMessages:
         data = await self.service.preview(asset, kind)
         return BufferedInputFile(data, filename=f"skin-{asset.content_hash[:12]}-{kind}.png")
 
-    def _markup(self, asset: SkinAsset, message: Message) -> InlineKeyboardMarkup:
+    def _markup(
+        self, asset: SkinAsset, message: Message, locale: str | None = None
+    ) -> InlineKeyboardMarkup:
         return preview_markup(
-            asset, self.service, self.bot_username, private=message.chat.type == "private"
+            asset,
+            self.service,
+            self.bot_username,
+            private=message.chat.type == "private",
+            locale=locale,
         )
 
     async def send(
@@ -168,14 +184,15 @@ class SkinMessages:
         kind: RenderKind = "front",
         *,
         rich: bool = True,
+        locale: str | None = None,
     ) -> None:
         file = await self._media(asset, kind)
-        markup = self._markup(asset, message)
+        markup = self._markup(asset, message, locale)
         if kind == "skin":
             await bot.send_document(
                 message.chat.id,
                 file,
-                caption=caption(asset),
+                caption=caption(asset, locale=locale),
                 parse_mode="HTML",
                 reply_markup=markup,
             )
@@ -184,7 +201,7 @@ class SkinMessages:
             try:
                 await bot.send_rich_message(
                     message.chat.id,
-                    rich_profile(asset, InputMediaPhoto(media=file), markup),
+                    rich_profile(asset, InputMediaPhoto(media=file), markup, locale=locale),
                 )
                 return
             except (TelegramNotFound, TelegramBadRequest) as error:
@@ -196,7 +213,11 @@ class SkinMessages:
                 }:
                     raise
         await bot.send_photo(
-            message.chat.id, file, caption=caption(asset), parse_mode="HTML", reply_markup=markup
+            message.chat.id,
+            file,
+            caption=caption(asset, locale=locale),
+            parse_mode="HTML",
+            reply_markup=markup,
         )
 
     async def edit(
@@ -205,17 +226,19 @@ class SkinMessages:
         message: Message,
         asset: SkinAsset,
         kind: RenderKind = "front",
+        *,
+        locale: str | None = None,
     ) -> None:
         """Keep this message's layout in place; a rejected edit falls back to the default one."""
         file = await self._media(asset, kind)
-        markup = self._markup(asset, message)
-        media = input_media(file, asset, kind)
+        markup = self._markup(asset, message, locale)
+        media = input_media(file, asset, kind, locale)
         if self.settings.rich_messages and message.rich_message is not None:
             try:
                 await bot.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=message.message_id,
-                    rich_message=rich_profile(asset, media, markup),
+                    rich_message=rich_profile(asset, media, markup, locale=locale),
                 )
                 return
             except (TelegramNotFound, TelegramBadRequest) as error:
@@ -232,11 +255,12 @@ class SkinMessages:
         except (TelegramNotFound, TelegramBadRequest) as error:
             if isinstance(error, TelegramBadRequest) and unchanged(error):
                 return
-        await self.send(bot, message, asset, kind, rich=False)
+        await self.send(bot, message, asset, kind, rich=False, locale=locale)
 
 
 def create_router(service: SkinService, settings: Settings, bot_username: str) -> Router:
     router = Router(name="minecraft-skins")
+    SkinI18nMiddleware(i18n).setup(router)
     messages = SkinMessages(service, settings, bot_username)
     inline = InlineSkins(service, settings, bot_username)
 
@@ -251,10 +275,12 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
     @router.message(CommandStart(ignore_mention=True))
     async def start(message: Message) -> None:
         await message.answer(
-            "<b>Minecraft Skin Bot</b>\n\n"
-            "Send a Minecraft username, UUID, or skin PNG.\n"
-            f"Share skins in any chat with <code>@{escape(bot_username)} Notch</code>.\n"
-            "Open 3D on a result to rotate, zoom and animate the skin.\n\n/help",
+            tr(
+                "<b>Minecraft Skin Bot</b>\n\n"
+                "Send a Minecraft username, UUID, or skin PNG.\n"
+                "Share skins in any chat with <code>@{bot_username} Notch</code>.\n"
+                "Open 3D on a result to rotate, zoom and animate the skin.\n\n/help"
+            ).format(bot_username=escape(bot_username)),
             parse_mode="HTML",
         )
 
@@ -262,14 +288,16 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
     @router.message(Command("help", ignore_mention=True))
     async def help_message(message: Message) -> None:
         await message.answer(
-            "Send <code>Notch</code> or a Minecraft UUID to see a skin.\n"
-            "For a standard photo, send <code>skin Notch</code>.\n"
-            "In groups and channels, mention this bot in the query or file caption.\n"
-            "Upload a 64×64 or 64×32 skin PNG as a file.\n"
-            f"Use <code>@{escape(bot_username)} Notch</code> to share "
-            "Skin, Three-view, Head or Original.\n"
-            "Open 3D for rotation, zoom, layers, cape and animation.\n"
-            f"Uploaded skin links stay available for {settings.upload_ttl_seconds / 3600:g} hours.",
+            tr(
+                "Send <code>Notch</code> or a Minecraft UUID to see a skin.\n"
+                "For a standard photo, send <code>skin Notch</code>.\n"
+                "In groups and channels, mention this bot in the query or file caption.\n"
+                "Upload a 64×64 or 64×32 skin PNG as a file.\n"
+                "Use <code>@{bot_username} Notch</code> to share "
+                "Skin, Three-view, Head or Original.\n"
+                "Open 3D for rotation, zoom, layers, cape and animation.\n"
+                "Uploaded skin links stay available for {hours:g} hours."
+            ).format(bot_username=escape(bot_username), hours=settings.upload_ttl_seconds / 3600),
             parse_mode="HTML",
         )
 
@@ -302,7 +330,7 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
     @router.channel_post(F.photo)
     @router.message(F.photo)
     async def compressed_upload(message: Message) -> None:
-        await message.answer("Send the skin PNG as a file to preserve its original pixels.")
+        await message.answer(tr("Send the skin PNG as a file to preserve its original pixels."))
 
     @router.channel_post(F.text)
     @router.message(F.text)
@@ -322,6 +350,55 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
 
     @router.callback_query(F.data.startswith("p:"))
     async def preview(callback: CallbackQuery, bot: Bot) -> None:
+        if callback.inline_message_id:
+            locale = locale_from_user(callback.from_user)
+            try:
+                # Answer once with the result or an alert while this query is still actionable.
+                async with asyncio.timeout(8):
+                    try:
+                        reference, kind = parse_action(callback.data or "")
+                    except ValueError as error:
+                        raise UtilityError(
+                            "Skin unavailable", "Send the player name or upload the skin again."
+                        ) from error
+                    asset = await service.resolve(reference)
+                    for attempt in range(2):
+                        rich = await inline.rich_message(bot, asset, kind, locale=locale)
+                        try:
+                            await bot.edit_message_text(
+                                inline_message_id=callback.inline_message_id, rich_message=rich
+                            )
+                            break
+                        except TelegramBadRequest as error:
+                            if unchanged(error):
+                                break
+                            if attempt == 0 and invalid_file_id(error):
+                                await service.cache.delete(inline.media_key(bot, asset, kind))
+                                continue
+                            raise
+            except UtilityError as error:
+                await callback.answer(error_message(error, locale), show_alert=True)
+                return
+            except MediaCacheUnavailable as error:
+                logger.warning(
+                    "Inline media cache unavailable (cache_upload): %s",
+                    error,
+                    extra={
+                        "operation": "cache_upload",
+                        "callback_query_id": callback.id,
+                        "telegram_method": error.telegram_method,
+                    },
+                )
+                await callback.answer(error_message(MEDIA_ERROR, locale), show_alert=True)
+                return
+            except TimeoutError:
+                logger.warning(
+                    "Inline skin action timed out", extra={"operation": "inline_callback"}
+                )
+                await callback.answer(tr("Try again in a moment.", locale), show_alert=True)
+                return
+            await callback.answer()
+            return
         await callback.answer()
         if not isinstance(callback.message, Message):
             return
@@ -341,18 +418,20 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
     async def inline_query(query: InlineQuery, bot: Bot) -> None:
         parsed = parse_query(query.query)
         if parsed is None:
-            await query.answer([], cache_time=3, is_personal=False)
+            await query.answer([], cache_time=3, is_personal=True)
             return
         try:
-            results, button = await inline.results(bot, parsed, inline_query_id=query.id)
+            results, button = await inline.results(
+                bot, parsed, inline_query_id=query.id, locale=locale_from_user(query.from_user)
+            )
         except UtilityError as error:
             await query.answer(
-                [failure_article("lookup-error", error)], cache_time=5, is_personal=False
+                [failure_article("lookup-error", error)], cache_time=5, is_personal=True
             )
             return
         try:
             await query.answer(
-                results, button=button, cache_time=60 if results else 0, is_personal=False
+                results, button=button, cache_time=60 if results else 0, is_personal=True
             )
             return
         except TelegramBadRequest as error:
@@ -366,9 +445,11 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
             )
         try:
             await inline.invalidate(bot, parsed.reference)
-            results, button = await inline.results(bot, parsed, inline_query_id=query.id)
+            results, button = await inline.results(
+                bot, parsed, inline_query_id=query.id, locale=locale_from_user(query.from_user)
+            )
             await query.answer(
-                results, button=button, cache_time=60 if results else 0, is_personal=False
+                results, button=button, cache_time=60 if results else 0, is_personal=True
             )
         except TelegramBadRequest as error:
             if stale_query(error):
@@ -379,11 +460,11 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
             # Fresh uploads were rejected too, so the media is not the problem; degrade instead.
             logger.warning("Inline media rejected after refreshing (%s)", brief(error))
             await query.answer(
-                [failure_article("media-error", MEDIA_ERROR)], cache_time=5, is_personal=False
+                [failure_article("media-error", MEDIA_ERROR)], cache_time=5, is_personal=True
             )
         except UtilityError as error:
             await query.answer(
-                [failure_article("lookup-error", error)], cache_time=5, is_personal=False
+                [failure_article("lookup-error", error)], cache_time=5, is_personal=True
             )
 
     @router.errors()
@@ -403,12 +484,23 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
         else:
             logger.warning("Telegram request failed (%s)", type(event.exception).__name__)
         error = UtilityError("Skin service is busy", "Try again in a moment.")
+        target = event.update.message or event.update.channel_post
+        requester = target.from_user if target else None
+        if event.update.inline_query:
+            requester = event.update.inline_query.from_user
+        elif event.update.callback_query:
+            requester = event.update.callback_query.from_user
+        locale = locale_from_user(requester)
         try:
             if event.update.inline_query:
                 await event.update.inline_query.answer(
-                    [failure_article("service-busy", error)],
+                    [failure_article("service-busy", error, locale)],
                     cache_time=1,
-                    is_personal=False,
+                    is_personal=True,
+                )
+            elif event.update.callback_query and event.update.callback_query.inline_message_id:
+                await event.update.callback_query.answer(
+                    error_message(error, locale), show_alert=True
                 )
             else:
                 target = event.update.message or event.update.channel_post
@@ -416,7 +508,9 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
                     callback_message = event.update.callback_query.message
                     target = callback_message if isinstance(callback_message, Message) else None
                 if target:
-                    await bot.send_message(target.chat.id, error_text(error), parse_mode="HTML")
+                    await bot.send_message(
+                        target.chat.id, error_text(error, locale), parse_mode="HTML"
+                    )
         except (TelegramAPIError, TimeoutError) as recovery_error:
             logger.warning("Telegram recovery failed (%s)", type(recovery_error).__name__)
         return True

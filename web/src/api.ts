@@ -1,3 +1,5 @@
+import { translator } from './i18n';
+
 export type SkinReference = { kind: 'profile' | 'upload'; id: string };
 export type SkinModel = 'classic' | 'slim' | 'unknown';
 
@@ -45,16 +47,20 @@ export function inlineReference(reference: SkinReference): string {
   return reference.kind === 'upload' ? `upload:${reference.id}` : reference.id;
 }
 
-export class ViewerError extends Error {}
+type ViewerErrorCode = 'serviceBusy' | 'uploadExpired' | 'playerNotFound' | 'invalidData';
+
+export class ViewerError extends Error {
+  constructor(readonly code: ViewerErrorCode) { super(translator('en')(code)); }
+}
 
 function assetURL(value: unknown, kind: 'skin' | 'cape', base: URL): string {
-  if (typeof value !== 'string') throw new ViewerError('Reopen the skin to load its data.');
+  if (typeof value !== 'string') throw new ViewerError('invalidData');
   const url = new URL(value, base);
   const prefix = base.pathname.replace(/\/$/, '');
   const path = url.pathname.slice(prefix.length);
   if (url.origin !== base.origin || !url.pathname.startsWith(prefix + '/') || !new RegExp(`^/api/${kind}/[a-f0-9]{64}\\.png$`).test(path)
     || url.search || url.hash || url.username || url.password) {
-    throw new ViewerError('Reopen the skin to load its data.');
+    throw new ViewerError('invalidData');
   }
   return url.href;
 }
@@ -69,21 +75,21 @@ export async function loadProfile(reference: SkinReference, apiBase: string): Pr
       credentials: 'omit',
     });
   } catch {
-    throw new ViewerError('Skin service is busy. Reopen the skin to try again.');
+    throw new ViewerError('serviceBusy');
   }
   if (response.status === 410 || (response.status === 404 && reference.kind === 'upload')) {
-    throw new ViewerError('This upload has expired. Send the PNG to the bot again.');
+    throw new ViewerError('uploadExpired');
   }
-  if (response.status === 404) throw new ViewerError('Player not found. Check the UUID.');
-  if (!response.ok) throw new ViewerError('Skin service is busy. Reopen the skin to try again.');
+  if (response.status === 404) throw new ViewerError('playerNotFound');
+  if (!response.ok) throw new ViewerError('serviceBusy');
   const value: unknown = await response.json().catch(() => null);
-  if (typeof value !== 'object' || value === null) throw new ViewerError('Reopen the skin to load its data.');
+  if (typeof value !== 'object' || value === null) throw new ViewerError('invalidData');
   const data = value as Record<string, unknown>;
   if (typeof data.name !== 'string' || !['classic', 'slim', 'unknown'].includes(String(data.model))
     || typeof data.bot_username !== 'string' || !/^[a-z0-9_]{5,32}$/i.test(data.bot_username)
     || data.reference !== inlineReference(reference)
     || (reference.kind === 'profile' ? data.uuid !== reference.id : data.uuid !== null)) {
-    throw new ViewerError('Reopen the skin to load its data.');
+    throw new ViewerError('invalidData');
   }
   return {
     uuid: data.uuid as string | null,

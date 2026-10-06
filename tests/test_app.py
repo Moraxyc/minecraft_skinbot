@@ -77,7 +77,7 @@ async def test_startup_identity_drives_telegram_links_and_public_viewer(
         result = session.calls[-1]
         assert isinstance(result, AnswerInlineQuery)
         assert len(result.results) == 4
-        for media in result.results:
+        for media in result.results[1:]:
             assert media.reply_markup is not None
             assert media.reply_markup.inline_keyboard[0][0].url == (
                 f"https://t.me/{username}?startapp={PLAYER.hex}"
@@ -97,6 +97,11 @@ async def test_startup_identity_drives_telegram_links_and_public_viewer(
     monkeypatch.setattr(web, "AppRunner", create_runner)
     monkeypatch.setattr(Dispatcher, "start_polling", poll)
     await app.run(runtime)
+    commands = [call for call in session.calls if isinstance(call, SetMyCommands)]
+    assert [(call.language_code, call.commands[0].description) for call in commands] == [
+        (None, "Search and share Minecraft skins"),
+        ("zh", "查询和分享 Minecraft 皮肤"),
+    ]
     assert sum(isinstance(call, GetMe) for call in session.calls) == 1
     assert session.closed and runners[0].addresses == []
 

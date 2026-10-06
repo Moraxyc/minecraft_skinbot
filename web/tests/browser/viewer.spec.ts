@@ -5,14 +5,15 @@ const uuid = '069a79f444e94726a5befca90e38aaf5';
 const hash = 'a'.repeat(64);
 const botUsername = 'resolved_skin_bot';
 
-async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown' = 'classic', legacy = false): Promise<void> {
+async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown' = 'classic', legacy = false, language = 'en'): Promise<void> {
   const png = await readFile(new URL(`./fixtures/${legacy ? 'legacy' : 'modern'}.png`, import.meta.url));
   const cape = await readFile(new URL('./fixtures/legacy.png', import.meta.url));
   await page.route('https://telegram.org/js/telegram-web-app.js', (route) => route.fulfill({ body: '', contentType: 'text/javascript' }));
-  await page.addInitScript(() => {
+  await page.addInitScript((language) => {
     const events = new Map<string, () => void>();
     const app = {
       platform: 'android', version: '10.3', colorScheme: 'dark',
+      initDataUnsafe: { user: { language_code: language } },
       themeParams: { bg_color: '#17212b', text_color: '#ffffff', hint_color: '#aabbcc', secondary_bg_color: '#232e3c', button_color: '#2481cc', button_text_color: '#ffffff' },
       safeAreaInset: { top: 24, right: 0, bottom: 16, left: 0 },
       contentSafeAreaInset: { top: 20, right: 0, bottom: 0, left: 0 },
@@ -23,7 +24,7 @@ async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown'
       openTelegramLink(url: string) { Object.assign(window, { lastTelegramLink: url }); },
     };
     Object.assign(window, { Telegram: { WebApp: app }, telegramTestEvents: events });
-  });
+  }, language);
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('.png')) {
@@ -97,6 +98,28 @@ test('mobile WebGL viewer loads, rotates, zooms, resizes, themes, and shares bot
   await expect(page.getByLabel('Inline query', { exact: true })).toHaveValue(`@${botUsername} view upload:${hash}`);
   await expect(page.getByRole('link', { name: 'Open Telegram' })).toHaveAttribute('href', `https://t.me/${botUsername}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('Chinese Telegram language localizes the viewer and errors while preserving share identity', async ({ page }) => {
+  await installFixtures(page, 'slim', false, 'zh-CN');
+  await page.goto(`/?uuid=${uuid}`);
+  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-Hans');
+  await expect(page.getByRole('heading', { name: 'Notch' })).toBeVisible();
+  await expect(page.locator('#details')).toHaveText('模型: 纤细');
+  await expect(page.locator('#viewer')).toHaveAttribute('aria-label', '拖动旋转，双指或滚动缩放。');
+  await page.getByRole('button', { name: '分享三视图' }).click();
+  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`view ${uuid}`);
+  await expect(page.locator('#share-status')).toHaveText('选择聊天，再选择内联结果。');
+  await page.evaluate(() => { if (window.Telegram?.WebApp) delete window.Telegram.WebApp.switchInlineQuery; });
+  await page.getByRole('button', { name: '分享皮肤', exact: true }).click();
+  await expect(page.getByLabel('内联查询', { exact: true })).toHaveValue(`@${botUsername} skin ${uuid}`);
+  await expect(page.getByRole('link', { name: '打开 Telegram' })).toHaveAttribute('href', `https://t.me/${botUsername}`);
+  await expect(page.locator('#share-status')).toHaveText('复制查询并粘贴到目标 Telegram 聊天。');
+  await page.route(`**/api/upload/${hash}`, (route) => route.fulfill({ status: 410, json: { error: 'raw upstream detail' } }));
+  await page.goto(`/?upload=${hash}`);
+  await expect(page.locator('#status')).toHaveText('上传已过期，请重新向机器人发送 PNG。');
+  await expect(page.getByRole('button', { name: '分享三视图' })).toBeDisabled();
 });
 
 test('real renderer respects explicit slim metadata, layers, reset, legacy conversion, and touch controls', async ({ page }) => {

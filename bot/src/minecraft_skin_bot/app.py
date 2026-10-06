@@ -16,6 +16,7 @@ from minecraft_skin_bot.config import Settings
 from minecraft_skin_bot.minecraft.client import MojangProfileProvider
 from minecraft_skin_bot.service import SkinService
 from minecraft_skin_bot.telegram import create_router
+from minecraft_skin_bot.telegram.i18n import tr
 from minecraft_skin_bot.telegram.media import MediaCacheUnavailable, validate_media_cache
 from minecraft_skin_bot.web import create_web_app
 
@@ -145,6 +146,19 @@ async def run(settings: Settings) -> None:
                     BotCommand(command="start", description="Search and share Minecraft skins"),
                     BotCommand(command="help", description="Lookup, inline sharing and uploads"),
                 ]
+            )
+            await bot.set_my_commands(
+                [
+                    BotCommand(
+                        command="start",
+                        description=tr("Search and share Minecraft skins", "zh_Hans"),
+                    ),
+                    BotCommand(
+                        command="help",
+                        description=tr("Lookup, inline sharing and uploads", "zh_Hans"),
+                    ),
+                ],
+                language_code="zh",
             )
             gc = asyncio.create_task(collect())
             allowed_updates = dispatcher.resolve_used_update_types()

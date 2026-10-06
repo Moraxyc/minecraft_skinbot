@@ -83,7 +83,9 @@ class Provider:
         self.lookups += 1
         if username != "Notch":
             raise UtilityError(
-                "Player not found", f'No Minecraft profile named "{username}" was found.'
+                "Player not found",
+                'No Minecraft profile named "{username}" was found.',
+                params={"username": username},
             )
         return PLAYER
 
@@ -435,7 +437,7 @@ async def test_inline_has_four_real_media_results_and_uuid_viewer(harness: Harne
     assert answer.results[3].document_file_id.startswith("doc-")
     assert answer.button and answer.button.web_app
     assert answer.button.web_app.url == f"https://skin.example/view?uuid={PLAYER.hex}"
-    for result in answer.results:
+    for result in answer.results[1:]:
         assert result.reply_markup is not None
         assert (
             result.reply_markup.inline_keyboard[0][0].url

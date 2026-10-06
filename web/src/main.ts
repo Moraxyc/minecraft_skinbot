@@ -1,4 +1,5 @@
 import { inlineReference, loadProfile, parseReference, ViewerError } from './api';
+import { localizeDocument, translator, viewerLocale } from './i18n';
 import { copyInlineQuery, getTelegram, initializeTelegram, shareInline, telegramBotURL } from './telegram';
 import { Viewer, type AnimationName } from './viewer';
 import './style.css';
@@ -10,6 +11,9 @@ function element<T extends HTMLElement>(id: string): T {
 }
 
 const app = getTelegram();
+const locale = viewerLocale(app, navigator.languages.length ? navigator.languages : [navigator.language]);
+const t = translator(locale);
+localizeDocument(locale);
 const cleanupTelegram = initializeTelegram(app);
 const reference = parseReference(window.location.search, app?.initDataUnsafe?.start_param);
 const status = element('status');
@@ -32,25 +36,24 @@ function share(kind: 'skin' | 'view'): void {
   input.hidden = outcome !== 'manual';
   element('copy-query').hidden = outcome !== 'manual';
   element('share-status').textContent = outcome === 'manual'
-    ? url ? 'Copy this query and paste it into your target Telegram chat.' : 'Use your bot’s username followed by this query in your target Telegram chat.'
-    : 'Choose a chat, then select the inline result.';
+    ? t(url ? 'manualShare' : 'manualShareWithoutBot')
+    : t('chooseChat');
 }
 
 async function start(): Promise<void> {
   if (!reference) {
-    if (window.location.search) status.textContent = 'Open a valid skin link from the bot.';
+    if (window.location.search) status.textContent = t('invalidLink');
     return;
   }
-  status.textContent = 'Loading skin…';
+  status.textContent = t('loading');
   try {
     const profile = await loadProfile(reference, import.meta.env.VITE_API_BASE_URL || window.location.origin);
     botUsername = profile.bot_username;
-    element('name').textContent = profile.name;
-    const model = profile.model.charAt(0).toUpperCase() + profile.model.slice(1);
-    element('details').textContent = `Model: ${model}${profile.cape_url ? ' · Cape' : ''}`;
+    element('name').textContent = reference.kind === 'upload' ? t('uploadedSkin') : profile.name;
+    element('details').textContent = `${t('model')}: ${t(profile.model)}${profile.cape_url ? ` · ${t('cape')}` : ''}`;
     viewer = new Viewer(element<HTMLCanvasElement>('viewer'), element('stage'), () => {
       status.hidden = false;
-      status.textContent = 'Restoring the 3D viewer…';
+      status.textContent = t('restoring');
     });
     element('viewer').addEventListener('webglcontextrestored', () => { status.hidden = true; });
     await viewer.load(profile);
@@ -59,7 +62,7 @@ async function start(): Promise<void> {
   } catch (error) {
     viewer?.dispose();
     viewer = undefined;
-    status.textContent = error instanceof ViewerError ? error.message : 'The 3D viewer is unavailable. Try reopening the skin.';
+    status.textContent = t(error instanceof ViewerError ? error.code : 'viewerUnavailable');
   }
 }
 
@@ -80,8 +83,8 @@ element('share-view').addEventListener('click', () => share('view'));
 element('copy-query').addEventListener('click', () => {
   void copyInlineQuery(element<HTMLTextAreaElement>('inline-query')).then((copied) => {
     element('share-status').textContent = copied
-      ? 'Copied. Paste into your target Telegram chat.'
-      : 'Select and copy the query, then paste it into your target Telegram chat.';
+      ? t('copied')
+      : t('selectQuery');
   });
 });
 element<HTMLAnchorElement>('share-fallback').addEventListener('click', (event) => {

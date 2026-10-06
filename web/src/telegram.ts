@@ -1,7 +1,7 @@
 export interface TelegramWebApp {
   version: string;
   platform: string;
-  initDataUnsafe?: { start_param?: string };
+  initDataUnsafe?: { start_param?: string; user?: { language_code?: string } };
   themeParams: Record<string, string | undefined>;
   colorScheme: 'light' | 'dark';
   safeAreaInset?: Partial<Record<'top' | 'right' | 'bottom' | 'left', number>>;

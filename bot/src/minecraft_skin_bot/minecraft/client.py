@@ -85,8 +85,9 @@ class MojangProfileProvider:
                 "https://api.mojang.com/users/profiles/minecraft/" + username,
                 missing=UtilityError(
                     "Player not found",
-                    f'No Minecraft profile named "{username}" was found.',
+                    'No Minecraft profile named "{username}" was found.',
                     status=404,
+                    params={"username": username},
                 ),
             )
             try:

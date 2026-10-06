@@ -1,0 +1,163 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: minecraft-skin-bot 0.1\n"
+"POT-Creation-Date: 2026-10-06 00:00+0000\n"
+"PO-Revision-Date: 2026-10-06 00:00+0000\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "<b>Minecraft Skin Bot</b>\n\nSend a Minecraft username, UUID, or skin PNG.\nShare skins in any chat with <code>@{bot_username} Notch</code>.\nOpen 3D on a result to rotate, zoom and animate the skin.\n\n/help"
+msgstr "<b>Minecraft 皮肤机器人</b>\n\n发送 Minecraft 用户名、UUID 或皮肤 PNG。\n在任意聊天中输入 <code>@{bot_username} Notch</code> 分享皮肤。\n打开结果中的 3D 查看器，即可旋转、缩放和播放动画。\n\n/help"
+
+msgid "Send <code>Notch</code> or a Minecraft UUID to see a skin.\nFor a standard photo, send <code>skin Notch</code>.\nIn groups and channels, mention this bot in the query or file caption.\nUpload a 64×64 or 64×32 skin PNG as a file.\nUse <code>@{bot_username} Notch</code> to share Skin, Three-view, Head or Original.\nOpen 3D for rotation, zoom, layers, cape and animation.\nUploaded skin links stay available for {hours:g} hours."
+msgstr "发送 <code>Notch</code> 或 Minecraft UUID 查看皮肤。\n发送 <code>skin Notch</code> 获取普通图片。\n在群组和频道中，请在查询或文件说明中提及本机器人。\n以文件形式上传 64×64 或 64×32 的皮肤 PNG。\n输入 <code>@{bot_username} Notch</code> 分享皮肤、三视图、头像或原始文件。\n打开 3D 查看器即可旋转、缩放、切换图层、查看披风和播放动画。\n上传皮肤的链接在 {hours:g} 小时内可用。"
+
+msgid "Search and share Minecraft skins"
+msgstr "查询和分享 Minecraft 皮肤"
+
+msgid "Lookup, inline sharing and uploads"
+msgstr "查询、内联分享和上传帮助"
+
+msgid "Model"
+msgstr "模型"
+
+msgid "Classic"
+msgstr "经典"
+
+msgid "Slim"
+msgstr "纤细"
+
+msgid "Unknown"
+msgstr "未知"
+
+msgid "Cape available in 3D"
+msgstr "可在 3D 查看器中查看披风"
+
+msgid "Uploaded skin"
+msgstr "上传的皮肤"
+
+msgid "Skin"
+msgstr "皮肤"
+
+msgid "Head"
+msgstr "头像"
+
+msgid "Front"
+msgstr "正面"
+
+msgid "Back"
+msgstr "背面"
+
+msgid "Side"
+msgstr "侧面"
+
+msgid "Three-view"
+msgstr "三视图"
+
+msgid "Original"
+msgstr "原始文件"
+
+msgid "Original Skin"
+msgstr "原始皮肤"
+
+msgid "Minecraft skin PNG"
+msgstr "Minecraft 皮肤 PNG"
+
+msgid "Open 3D"
+msgstr "打开 3D"
+
+msgid "Share"
+msgstr "分享"
+
+msgid "Copy UUID"
+msgstr "复制 UUID"
+
+msgid "Open interactive 3D"
+msgstr "打开交互式 3D 查看器"
+
+msgid "Previews unavailable · Open 3D"
+msgstr "预览暂不可用 · 打开 3D"
+
+msgid "Send the skin PNG as a file to preserve its original pixels."
+msgstr "请以文件形式发送皮肤 PNG，以保留原始像素。"
+
+msgid "Invalid skin"
+msgstr "皮肤无效"
+
+msgid "Expected a skin PNG smaller than 1 MiB."
+msgstr "请发送小于 1 MiB 的皮肤 PNG。"
+
+msgid "Send a 64×64 or 64×32 Minecraft skin PNG."
+msgstr "请发送 64×64 或 64×32 的 Minecraft 皮肤 PNG。"
+
+msgid "Expected a 64×64 or 64×32 Minecraft skin PNG."
+msgstr "请发送 64×64 或 64×32 的 Minecraft 皮肤 PNG。"
+
+msgid "Open a skin link or send a Minecraft skin PNG."
+msgstr "请打开皮肤链接，或发送 Minecraft 皮肤 PNG。"
+
+msgid "Upload expired"
+msgstr "上传已过期"
+
+msgid "Send the skin PNG to the bot again."
+msgstr "请重新向机器人发送皮肤 PNG。"
+
+msgid "Skin unavailable"
+msgstr "皮肤暂不可用"
+
+msgid "Send the player name or upload the skin again."
+msgstr "请重新发送玩家名或上传皮肤。"
+
+msgid "This profile has no public skin texture."
+msgstr "此玩家没有公开的皮肤纹理。"
+
+msgid "Minecraft returned an unsupported skin texture."
+msgstr "Minecraft 返回的皮肤格式暂不支持。"
+
+msgid "Open the profile or upload the PNG again."
+msgstr "请重新打开玩家皮肤或上传 PNG。"
+
+msgid "Cape unavailable"
+msgstr "披风暂不可用"
+
+msgid "Minecraft returned an unsupported cape texture."
+msgstr "Minecraft 返回的披风格式暂不支持。"
+
+msgid "Open the profile again."
+msgstr "请重新打开玩家皮肤。"
+
+msgid "Invalid player"
+msgstr "玩家信息无效"
+
+msgid "Send a Minecraft username (3–16 characters) or UUID."
+msgstr "请发送 Minecraft 用户名（3–16 个字符）或 UUID。"
+
+msgid "Player not found"
+msgstr "找不到玩家"
+
+msgid "No Minecraft profile named \"{username}\" was found."
+msgstr "找不到名为“{username}”的 Minecraft 玩家。"
+
+msgid "No Minecraft profile with this UUID was found."
+msgstr "找不到此 UUID 对应的 Minecraft 玩家。"
+
+msgid "Minecraft is unavailable"
+msgstr "Minecraft 服务暂不可用"
+
+msgid "Try the lookup again in a moment."
+msgstr "请稍后重新查询。"
+
+msgid "Skins unavailable"
+msgstr "皮肤暂不可用"
+
+msgid "Send the player name again in a moment."
+msgstr "请稍后重新发送玩家名。"
+
+msgid "Skin service is busy"
+msgstr "皮肤服务繁忙"
+
+msgid "Try again in a moment."
+msgstr "请稍后重试。"

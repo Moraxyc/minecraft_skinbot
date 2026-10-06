@@ -11,6 +11,7 @@ Resolve, preview and share Minecraft skins in Telegram. The mobile Mini App prov
 - Upload a 64×64 or 64×32 PNG and open its temporary 3D viewer.
 - Rotate, zoom, reset, toggle the outer layer and select Idle, Walk or Run in 3D.
 - View Classic / Slim models and official capes.
+- Use English or Simplified Chinese automatically from Telegram or browser language.
 
 ## Telegram setup
 
@@ -72,6 +73,18 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 
 The API permits the viewer's configured origin through CORS. The public viewer loads content by UUID or hash. Telegram authentication is unnecessary for this public content.
 
+## Languages
+
+The bot uses each Telegram update's language code. The viewer uses Telegram's display language, or browser language preferences when opened outside Telegram. `zh`, `zh-CN`, `zh-SG` and `zh-Hans` select Simplified Chinese; other languages fall back to English. Player names, UUIDs and share queries keep their original values. Language selection lasts for the current update or viewer page. Three-view images retain their shared Front / Side / Back labels; captions and controls use the selected language.
+
+English messages are source strings. Python translations live in `bot/src/minecraft_skin_bot/locales/zh_Hans/LC_MESSAGES/messages.po`; the viewer's translations live in `web/src/i18n.ts`. Compile the Python catalog after editing:
+
+```sh
+uv run pybabel compile -d bot/src/minecraft_skin_bot/locales -D messages
+```
+
+Commit the compiled `messages.mo` with its `.po` source. Wheels and Nix packages include both files. Nix checks verify installed translations and reproducible catalog compilation.
+
 ## Architecture
 
 `Telegram → SkinService → Minecraft provider → PNG parser / static renderer → content cache`
@@ -84,11 +97,11 @@ Uploaded PNGs use content-addressed storage with a 24-hour default TTL. Uploadin
 
 ## Telegram UX
 
-Bot API 10.3 Rich Messages provide a heading, image, compact profile details and embedded action buttons on supported clients. Telegram provides no public automatic client capability check. Send `skin Notch` for a standard photo message, or set `TELEGRAM_RICH_MESSAGES=false` for that layout throughout the bot. An unavailable Rich Message method also falls back to a photo. Inline results and initial upload previews always use standard cached media or photos.
+Bot API 10.3 Rich Messages provide a heading, image, compact profile details and embedded action buttons on supported clients. Telegram provides no public automatic client capability check. Send `skin Notch` for a standard photo message, or set `TELEGRAM_RICH_MESSAGES=false` for that layout throughout the bot, including Inline Skin. An unavailable Rich Message method also falls back to a photo. Initial upload previews use standard photos.
 
 Head, Front, Back, Side, Three-view and Original actions rewrite the message they were pressed on: a Rich Message keeps its layout through a rich edit, and a photo or document message is edited in place. Pressing the same action again leaves the message as is. When Telegram rejects the rich edit, the message falls back to the standard photo or document with the inline keyboard menu, and when no edit is possible at all the render is sent as a new standard message.
 
-Inline Mode supplies three cached photo results and one cached document result. `InlineQueryResultsButton.web_app` launches the query's viewer. Shared messages carry actions for 3D, original PNG, sharing again and UUID copying. Actions are rebuilt from the content reference.
+Inline Mode supplies Skin, Three-view, Head and Original Skin. Skin uses a cached photo result with Rich Message content and embedded view, 3D, share and UUID actions. Three-view and Head use cached photos; Original Skin uses a cached document. `InlineQueryResultsButton.web_app` launches the query's viewer. Inline callbacks rebuild the view from its UUID or upload hash and edit the shared message in place.
 
 The Mini App uses `Telegram.WebApp.switchInlineQuery` (6.7+) for **Share Skin** and **Share Three-view**, with queries such as `skin <uuid>` and `view <uuid>`. Plain browser viewing offers a copyable inline query and a Telegram bot link. Telegram's `shareMessage` uses a user-bound prepared message; this public viewer uses inline sharing instead.
 
