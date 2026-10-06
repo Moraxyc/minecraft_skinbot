@@ -17,7 +17,7 @@ async def api(
     tmp_path: Path,
 ) -> AsyncIterator[tuple[TestClient[web.Request, web.Application], SkinService]]:
     service = SkinService(Provider(), FileCache(tmp_path / "content"), settings(tmp_path))
-    async with TestClient(TestServer(create_web_app(service))) as client:
+    async with TestClient(TestServer(create_web_app(service, "runtime_skin_bot"))) as client:
         yield client, service
     await service.close()
 
@@ -35,6 +35,7 @@ async def test_viewer_profile_uses_public_content_urls_and_expected_cors(
     assert data["uuid"] == uuid
     assert data["reference"] == uuid
     assert data["model"] == "classic"
+    assert data["bot_username"] == "runtime_skin_bot"
     assert response.headers["Access-Control-Allow-Origin"] == "https://viewer.example"
     media = await client.get(data["skin_url"].replace("https://api.example", ""))
     assert media.content_type == "image/png"
@@ -51,7 +52,9 @@ async def test_expired_upload_and_invalid_public_paths_return_clean_errors(
     uploaded = await service.upload(skin_bytes("blue"))
     response = await client.get("/api/upload/" + uploaded.content_hash)
     assert response.status == 200
-    assert (await response.json())["reference"] == uploaded.reference
+    data = await response.json()
+    assert data["reference"] == uploaded.reference
+    assert data["bot_username"] == "runtime_skin_bot"
     expired = await client.get("/api/upload/" + "0" * 64)
     assert expired.status == 410
     assert (await expired.json())["message"] == "Send the skin PNG to the bot again."

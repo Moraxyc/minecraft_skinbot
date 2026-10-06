@@ -49,7 +49,7 @@ async def run(settings: Settings) -> None:
         provider = MojangProfileProvider(session)
         cache = FileCache(settings.cache_dir / "content")
         service = SkinService(provider, cache, settings)
-        runner = web.AppRunner(create_web_app(service), access_log=None)
+        runner: web.AppRunner | None = None
         bot = Bot(settings.bot_token)
         gc: asyncio.Task[None] | None = None
         polling: asyncio.Task[None] | None = None
@@ -66,11 +66,14 @@ async def run(settings: Settings) -> None:
                 await asyncio.sleep(3600)
 
         try:
+            me = await bot.me()
+            if not me.username:
+                error = "Telegram getMe returned no bot username. Set a username in BotFather."
+                logging.getLogger(__name__).error("%s", error)
+                raise ValueError(error)
+            runner = web.AppRunner(create_web_app(service, me.username), access_log=None)
             await runner.setup()
             await web.TCPSite(runner, settings.api_host, settings.api_port).start()
-            me = await bot.get_me()
-            if not me.username:
-                raise ValueError("Configure a Telegram bot username.")
             await bot.set_my_commands(
                 [
                     BotCommand(command="start", description="Search and share Minecraft skins"),
@@ -99,7 +102,8 @@ async def run(settings: Settings) -> None:
             if gc is not None:
                 gc.cancel()
                 await asyncio.gather(gc, return_exceptions=True)
-            await runner.cleanup()
+            if runner is not None:
+                await runner.cleanup()
             await service.close()
             await provider.close()
             await bot.session.close()

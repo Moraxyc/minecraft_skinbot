@@ -11,7 +11,7 @@ from minecraft_skin_bot.service import SkinAsset, SkinService
 logger = logging.getLogger(__name__)
 
 
-def create_web_app(service: SkinService) -> web.Application:
+def create_web_app(service: SkinService, bot_username: str) -> web.Application:
     origin_url = urlsplit(service.settings.mini_app_url)
     allowed_origin = f"{origin_url.scheme}://{origin_url.netloc}"
     limit = asyncio.Semaphore(32)
@@ -57,6 +57,7 @@ def create_web_app(service: SkinService) -> web.Application:
                 + f"/api/skin/{asset.content_hash}.png",
                 "cape_url": asset.cape_url,
                 "reference": asset.reference,
+                "bot_username": bot_username,
             }
         )
         response.headers["Cache-Control"] = (
