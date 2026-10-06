@@ -140,8 +140,8 @@ class InlineSkins:
                 file_id = await self.file_id(bot, asset, kind)
                 rich = (
                     InputRichMessageContent(
-                        rich_message=await self.rich_message(
-                            bot, asset, kind, locale=locale, private=private
+                        rich_message=self.rich_message(
+                            asset, kind, file_id, locale=locale, private=private
                         )
                     )
                     if kind == "front" and self.settings.rich_messages
@@ -192,17 +192,16 @@ class InlineSkins:
             web_app=WebAppInfo(url=self.service.viewer_url(asset, locale=locale)),
         )
 
-    async def rich_message(
+    def rich_message(
         self,
-        bot: Bot,
         asset: SkinAsset,
         kind: RenderKind,
+        file_id: str,
         *,
         locale: str | None = None,
         private: bool = False,
     ) -> InputRichMessage:
-        """Build inline rich content using files already uploaded by this bot."""
-        file_id = await self.file_id(bot, asset, kind)
+        """Build inline rich content from a cached Telegram file_id."""
         media = (
             InputMediaDocument(media=file_id) if kind == "skin" else InputMediaPhoto(media=file_id)
         )

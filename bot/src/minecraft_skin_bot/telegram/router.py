@@ -369,8 +369,9 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
                         ) from error
                     asset = await service.resolve(reference)
                     for attempt in range(2):
-                        rich = await inline.rich_message(
-                            bot, asset, kind, locale=locale, private=private
+                        file_id = await inline.file_id(bot, asset, kind)
+                        rich = inline.rich_message(
+                            asset, kind, file_id, locale=locale, private=private
                         )
                         try:
                             await bot.edit_message_text(
