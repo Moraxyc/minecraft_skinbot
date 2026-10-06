@@ -122,9 +122,12 @@ class InlineSkins:
         *,
         inline_query_id: str | None = None,
         locale: str | None = None,
+        private: bool = False,
     ) -> tuple[list[InlineResult], InlineQueryResultsButton]:
         asset = await self.service.resolve(query.reference)
-        markup = share_markup(asset, self.bot_username, locale=locale)
+        markup = share_markup(
+            asset, self.service, self.bot_username, private=private, locale=locale
+        )
         result_ids = asset.content_hash[:32]
         results: list[InlineResult] = []
         previews: tuple[tuple[str, RenderKind], ...] = (
@@ -137,7 +140,9 @@ class InlineSkins:
                 file_id = await self.file_id(bot, asset, kind)
                 rich = (
                     InputRichMessageContent(
-                        rich_message=await self.rich_message(bot, asset, kind, locale=locale)
+                        rich_message=await self.rich_message(
+                            bot, asset, kind, locale=locale, private=private
+                        )
                     )
                     if kind == "front" and self.settings.rich_messages
                     else None
@@ -177,14 +182,14 @@ class InlineSkins:
             )
             return [], InlineQueryResultsButton(
                 text=tr("Previews unavailable · Open 3D", locale),
-                web_app=WebAppInfo(url=self.service.viewer_url(asset)),
+                web_app=WebAppInfo(url=self.service.viewer_url(asset, locale=locale)),
             )
         preferred = {"skin": 0, "view": 1, "head": 2}[query.preferred]
         if preferred:
             results.insert(0, results.pop(preferred))
         return results, InlineQueryResultsButton(
             text=tr("Open interactive 3D", locale),
-            web_app=WebAppInfo(url=self.service.viewer_url(asset)),
+            web_app=WebAppInfo(url=self.service.viewer_url(asset, locale=locale)),
         )
 
     async def rich_message(
@@ -194,6 +199,7 @@ class InlineSkins:
         kind: RenderKind,
         *,
         locale: str | None = None,
+        private: bool = False,
     ) -> InputRichMessage:
         """Build inline rich content using files already uploaded by this bot."""
         file_id = await self.file_id(bot, asset, kind)
@@ -201,6 +207,6 @@ class InlineSkins:
             InputMediaDocument(media=file_id) if kind == "skin" else InputMediaPhoto(media=file_id)
         )
         markup = preview_markup(
-            asset, self.service, self.bot_username, private=False, locale=locale
+            asset, self.service, self.bot_username, private=private, locale=locale
         )
         return rich_profile(asset, media, markup, locale=locale)

@@ -11,7 +11,11 @@ function element<T extends HTMLElement>(id: string): T {
 }
 
 const app = getTelegram();
-const locale = viewerLocale(app, navigator.languages.length ? navigator.languages : [navigator.language]);
+const locale = viewerLocale(
+  app,
+  navigator.languages.length ? navigator.languages : [navigator.language],
+  new URLSearchParams(window.location.search).get('lang'),
+);
 const t = translator(locale);
 localizeDocument(locale);
 const cleanupTelegram = initializeTelegram(app);

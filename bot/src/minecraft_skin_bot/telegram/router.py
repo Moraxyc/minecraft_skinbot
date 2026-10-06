@@ -356,14 +356,16 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
                 # Answer once with the result or an alert while this query is still actionable.
                 async with asyncio.timeout(8):
                     try:
-                        reference, kind = parse_action(callback.data or "")
+                        reference, kind, private = parse_action(callback.data or "")
                     except ValueError as error:
                         raise UtilityError(
                             "Skin unavailable", "Send the player name or upload the skin again."
                         ) from error
                     asset = await service.resolve(reference)
                     for attempt in range(2):
-                        rich = await inline.rich_message(bot, asset, kind, locale=locale)
+                        rich = await inline.rich_message(
+                            bot, asset, kind, locale=locale, private=private
+                        )
                         try:
                             await bot.edit_message_text(
                                 inline_message_id=callback.inline_message_id, rich_message=rich
@@ -404,7 +406,7 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
             return
         try:
             try:
-                reference, kind = parse_action(callback.data or "")
+                reference, kind, _ = parse_action(callback.data or "")
             except ValueError as error:
                 raise UtilityError(
                     "Skin unavailable", "Send the player name or upload the skin again."
@@ -420,9 +422,13 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
         if parsed is None:
             await query.answer([], cache_time=3, is_personal=True)
             return
+        locale = locale_from_user(query.from_user)
+        # A web_app button launches only inside the sender's private chat with the bot, so an
+        # inline result bound for any other chat keeps the deep link into the bot.
+        private = query.chat_type == "sender"
         try:
             results, button = await inline.results(
-                bot, parsed, inline_query_id=query.id, locale=locale_from_user(query.from_user)
+                bot, parsed, inline_query_id=query.id, locale=locale, private=private
             )
         except UtilityError as error:
             await query.answer(
@@ -446,7 +452,7 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
         try:
             await inline.invalidate(bot, parsed.reference)
             results, button = await inline.results(
-                bot, parsed, inline_query_id=query.id, locale=locale_from_user(query.from_user)
+                bot, parsed, inline_query_id=query.id, locale=locale, private=private
             )
             await query.answer(
                 results, button=button, cache_time=60 if results else 0, is_personal=True

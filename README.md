@@ -17,7 +17,7 @@ Resolve, preview and share Minecraft skins in Telegram. The mobile Mini App prov
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) using `/newbot`. Supply its token through `TELEGRAM_BOT_TOKEN`.
 2. Enable Inline Mode with `/setinline`. Set the placeholder to `Minecraft username or UUID`.
-3. Open `/mybots` → your bot → Bot Settings → Configure Mini App → Enable Mini App. Set the HTTPS viewer URL as the Main Mini App URL. Keep launch URLs on that configured origin. `/setmenubutton` can also expose the viewer in private chats.
+3. Open `/mybots` → your bot → Bot Settings → Configure Mini App → Enable Mini App. Set the HTTPS viewer URL as the Main Mini App URL. Keep launch URLs on that configured origin. The `startapp` deep link serves inline results shared to groups and channels; results opened in the sender's private chat use an in-message `web_app` button instead and need no Main Mini App. `/setmenubutton` can also expose the viewer in private chats.
 4. Create a private cache channel, add the bot as an administrator with **Post Messages**, and set the complete signed numeric chat ID returned by Telegram in `TELEGRAM_CACHE_CHAT_ID` (usually beginning with `-100`). A private chat can also serve as the cache after its user sends `/start` to the bot. The bot uploads technical media there to obtain reusable Telegram `file_id` values. This configuration enables all four inline results, including the original PNG document.
 5. Host the viewer and public API over HTTPS. Set `MINI_APP_URL` to the viewer and `PUBLIC_BASE_URL` to the public API origin, including any reverse proxy prefix. Build the viewer with `VITE_API_BASE_URL` when the API uses a separate origin.
 
@@ -63,7 +63,7 @@ npm run dev
 npm run build
 ```
 
-Serve `web/dist` from any static host. The API supplies the bot username resolved at startup through Telegram `getMe`; the viewer uses it for Telegram links and external-browser sharing. A viewer URL accepts `?uuid=<32-character UUID>` or `?upload=<SHA-256>`. Main Mini App deep links also carry the same selector through `startapp`.
+Serve `web/dist` from any static host. The API supplies the bot username resolved at startup through Telegram `getMe`; the viewer uses it for Telegram links and external-browser sharing. A viewer URL accepts `?uuid=<32-character UUID>` or `?upload=<SHA-256>`, plus an optional `lang` that carries the sender's language into Mini Apps. Main Mini App deep links also carry the same selector through `startapp`.
 
 For a separate API host, build with:
 
@@ -75,7 +75,7 @@ The API permits the viewer's configured origin through CORS. The public viewer l
 
 ## Languages
 
-The bot uses each Telegram update's language code. The viewer uses Telegram's display language, or browser language preferences when opened outside Telegram. `zh`, `zh-CN`, `zh-SG` and `zh-Hans` select Simplified Chinese; other languages fall back to English. Player names, UUIDs and share queries keep their original values. Language selection lasts for the current update or viewer page. Three-view images retain their shared Front / Side / Back labels; captions and controls use the selected language.
+The bot uses each Telegram update's language code. The viewer uses Telegram's display language, or browser language preferences when opened outside Telegram. Mini Apps launched from an inline result or keyboard button arrive without Telegram user data, so the bot appends the sender's language to the viewer URL as `lang`; a real Telegram display language still wins whenever the client reports one. `zh`, `zh-CN`, `zh-SG` and `zh-Hans` select Simplified Chinese; other languages fall back to English. Player names, UUIDs and share queries keep their original values. Language selection lasts for the current update or viewer page. Three-view images retain their shared Front / Side / Back labels; captions and controls use the selected language.
 
 English messages are source strings. Python translations live in `bot/src/minecraft_skin_bot/locales/zh_Hans/LC_MESSAGES/messages.po`; the viewer's translations live in `web/src/i18n.ts`. Compile the Python catalog after editing:
 
@@ -101,7 +101,7 @@ Bot API 10.3 Rich Messages provide a heading, image, compact profile details and
 
 Head, Front, Back, Side, Three-view and Original actions rewrite the message they were pressed on: a Rich Message keeps its layout through a rich edit, and a photo or document message is edited in place. Pressing the same action again leaves the message as is. When Telegram rejects the rich edit, the message falls back to the standard photo or document with the inline keyboard menu, and when no edit is possible at all the render is sent as a new standard message.
 
-Inline Mode supplies Skin, Three-view, Head and Original Skin. Skin uses a cached photo result with Rich Message content and embedded view, 3D, share and UUID actions. Three-view and Head use cached photos; Original Skin uses a cached document. `InlineQueryResultsButton.web_app` launches the query's viewer. Inline callbacks rebuild the view from its UUID or upload hash and edit the shared message in place.
+Inline Mode supplies Skin, Three-view, Head and Original Skin. Skin uses a cached photo result with Rich Message content. Three-view and Head use cached photos; Original Skin uses a cached document. Each result carries an `Open 3D` action: an in-message `web_app` button when the result is bound to the sender's private chat with the bot, and a Main Mini App `startapp` deep link in every other chat, because Telegram accepts `web_app` buttons only in private chats. A Rich Message copies the UUID from the paragraph that displays it, so the duplicate `Copy UUID` keyboard button appears only in the standard photo and document layouts. `InlineQueryResultsButton.web_app` launches the query's viewer. Inline callbacks rebuild the view from its UUID or upload hash and edit the shared message in place.
 
 The Mini App uses `Telegram.WebApp.switchInlineQuery` (6.7+) for **Share Skin** and **Share Three-view**, with queries such as `skin <uuid>` and `view <uuid>`. Plain browser viewing offers a copyable inline query and a Telegram bot link. Telegram's `shareMessage` uses a user-bound prepared message; this public viewer uses inline sharing instead.
 

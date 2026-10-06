@@ -17,6 +17,7 @@ from aiogram.types import (
     InputRichBlockParagraph,
     InputRichBlockPhoto,
     InputRichMessageContent,
+    RichTextButton,
     Update,
 )
 from minecraft_skin_bot.cache import FileCache
@@ -120,10 +121,19 @@ async def test_only_inline_skin_uses_rich_content_with_cached_photo_and_actions(
             assert button.callback_data and len(button.callback_data.encode()) <= 64
             assert parse_action(button.callback_data)[0] == PLAYER.hex
     actions = rows[-1].buttons
+    assert [button.text for button in actions] == ["Open 3D", "Share"]
     assert actions[0].url == f"https://t.me/minecraft_skin_bot?startapp={PLAYER.hex}"
     assert all(button.web_app is None for button in actions)
     assert actions[1].switch_inline_query == PLAYER.hex
-    assert actions[2].copy_text and actions[2].copy_text.text == str(PLAYER)
+    uuid_line = next(
+        block
+        for block in blocks
+        if isinstance(block, InputRichBlockParagraph) and isinstance(block.text, list)
+    )
+    assert isinstance(uuid_line.text, list)
+    copy = uuid_line.text[-1]
+    assert isinstance(copy, RichTextButton) and copy.button.copy_text is not None
+    assert copy.button.copy_text.text == str(PLAYER)
 
 
 @pytest.mark.parametrize("uploaded", [False, True])
@@ -182,6 +192,27 @@ async def test_inline_callback_without_message_rebuilds_cached_rich_for_clickers
         call.__api_method__ not in {"sendMessage", "sendRichMessage", "editMessageMedia"}
         for call in rich_harness.session.calls
     )
+
+
+async def test_inline_callback_keeps_the_scope_of_the_chat_it_was_sent_from(
+    rich_harness: Harness,
+) -> None:
+    reference = action_reference(PLAYER.hex)
+    await rich_harness.dispatcher().feed_update(
+        rich_harness.bot, inline_callback(f"p:h:private:{reference}", "zh-CN")
+    )
+    edit = next(call for call in rich_harness.session.calls if isinstance(call, EditMessageText))
+    assert edit.rich_message is not None
+    rows = [
+        block
+        for block in edit.rich_message.blocks or []
+        if isinstance(block, InputRichBlockButtons)
+    ]
+    assert rows[0].buttons[0].text == "头像"
+    assert parse_action(rows[0].buttons[0].callback_data or "") == (PLAYER.hex, "head", True)
+    opened = rows[-1].buttons[0]
+    assert opened.web_app is not None
+    assert opened.web_app.url == f"https://viewer.example?uuid={PLAYER.hex}&lang=zh_Hans"
 
 
 @pytest.mark.parametrize("data", ["p:h:bad", "p:h:" + action_reference("upload:" + "0" * 64)])

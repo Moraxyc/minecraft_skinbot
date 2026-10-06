@@ -35,12 +35,15 @@ from aiogram.types import (
     InputMediaPhoto,
     InputRichBlockButtons,
     InputRichBlockDocument,
+    InputRichBlockParagraph,
     InputRichBlockPhoto,
+    InputRichMessageContent,
     Message,
     MessageEntity,
     PhotoSize,
     RichBlockParagraph,
     RichMessage,
+    RichTextButton,
     Update,
     User,
 )
@@ -217,9 +220,12 @@ def message(**data: Any) -> Message:
     )
 
 
-def inline_update(text: str) -> Update:
+def inline_update(text: str, *, chat_type: str | None = None) -> Update:
     return Update(
-        update_id=2, inline_query=InlineQuery(id="inline", from_user=USER, query=text, offset="")
+        update_id=2,
+        inline_query=InlineQuery(
+            id="inline", from_user=USER, query=text, offset="", chat_type=chat_type
+        ),
     )
 
 
@@ -414,11 +420,18 @@ async def test_plain_name_and_uuid_send_complete_rich_skin(
     blocks = output.rich_message.blocks or []
     assert any(isinstance(block, InputRichBlockPhoto) for block in blocks)
     rows = [block for block in blocks if isinstance(block, InputRichBlockButtons)]
-    assert [button.text for button in rows[-1].buttons] == ["Open 3D", "Share", "Copy UUID"]
+    assert [button.text for button in rows[-1].buttons] == ["Open 3D", "Share"]
     assert rows[-1].buttons[0].web_app is not None
     assert rows[-1].buttons[1].switch_inline_query == PLAYER.hex
-    assert rows[-1].buttons[2].copy_text is not None
-    assert rows[-1].buttons[2].copy_text.text == str(PLAYER)
+    uuid_line = next(
+        block
+        for block in blocks
+        if isinstance(block, InputRichBlockParagraph) and isinstance(block.text, list)
+    )
+    assert isinstance(uuid_line.text, list)
+    copy = uuid_line.text[-1]
+    assert uuid_line.text[0] == "UUID: " and isinstance(copy, RichTextButton)
+    assert copy.button.copy_text is not None and copy.button.copy_text.text == str(PLAYER)
 
 
 async def test_inline_has_four_real_media_results_and_uuid_viewer(harness: Harness) -> None:
@@ -436,7 +449,7 @@ async def test_inline_has_four_real_media_results_and_uuid_viewer(harness: Harne
     assert isinstance(answer.results[3], InlineQueryResultCachedDocument)
     assert answer.results[3].document_file_id.startswith("doc-")
     assert answer.button and answer.button.web_app
-    assert answer.button.web_app.url == f"https://skin.example/view?uuid={PLAYER.hex}"
+    assert answer.button.web_app.url == f"https://skin.example/view?uuid={PLAYER.hex}&lang=en"
     for result in answer.results[1:]:
         assert result.reply_markup is not None
         assert (
@@ -470,6 +483,34 @@ async def test_inline_has_four_real_media_results_and_uuid_viewer(harness: Harne
     short = harness.session.calls[-1]
     assert isinstance(short, AnswerInlineQuery) and short.results == []
     assert harness.provider.lookups == lookups
+
+
+@pytest.mark.parametrize(("chat_type", "private"), [("sender", True), ("group", False)])
+async def test_inline_open_3d_is_a_mini_app_only_in_the_senders_private_chat(
+    harness: Harness, chat_type: str, private: bool
+) -> None:
+    await harness.dispatcher().feed_update(harness.bot, inline_update("Notch", chat_type=chat_type))
+    answer = harness.session.calls[-1]
+    assert isinstance(answer, AnswerInlineQuery)
+    media = answer.results[1]
+    assert isinstance(media, InlineQueryResultCachedPhoto) and media.reply_markup is not None
+    opened = media.reply_markup.inline_keyboard[0][0]
+    if private:
+        assert opened.url is None and opened.web_app is not None
+        assert opened.web_app.url == f"https://skin.example/view?uuid={PLAYER.hex}&lang=en"
+    else:
+        assert opened.web_app is None
+        assert opened.url == f"https://t.me/minecraft_skin_bot?startapp={PLAYER.hex}"
+    skin = answer.results[0]
+    assert isinstance(skin, InlineQueryResultCachedPhoto)
+    content = skin.input_message_content
+    assert isinstance(content, InputRichMessageContent)
+    rows = [
+        block
+        for block in content.rich_message.blocks or []
+        if isinstance(block, InputRichBlockButtons)
+    ]
+    assert (rows[-1].buttons[0].web_app is not None) is private
 
 
 async def test_concurrent_inline_uploads_are_deduplicated_and_cache_deletion_recovers(
@@ -683,12 +724,12 @@ async def test_uploaded_png_actions_remain_self_contained(
     assert output.reply_markup and hasattr(output.reply_markup, "inline_keyboard")
     first_action = output.reply_markup.inline_keyboard[0][0].callback_data
     assert first_action and len(first_action.encode()) <= 64
-    reference, kind = parse_action(first_action)
+    reference, kind, _ = parse_action(first_action)
     asset = await harness.service.resolve(reference)
     assert kind == "head" and asset.skin == harness.provider.png
     startapp = mini_app_link(asset, "minecraft_skin_bot").split("startapp=", 1)[1]
     assert len(startapp) == 44 and ":" not in startapp
-    assert parse_action("p:t:" + startapp) == (reference, "three-view")
+    assert parse_action("p:t:" + startapp) == (reference, "three-view", False)
 
 
 @pytest.mark.parametrize(
@@ -791,9 +832,21 @@ def test_query_and_action_boundaries_and_caption_escaping() -> None:
     for reference in (PLAYER.hex, "upload:" + "ab" * 32):
         action = "p:h:" + action_reference(reference)
         assert len(action.encode()) <= 64
-        assert parse_action(action) == (reference, "head")
+        assert parse_action(action) == (reference, "head", False)
     with pytest.raises(ValueError):
         parse_action("p:t:../../outside")
+    with pytest.raises(ValueError):
+        parse_action("p:t:bogus:" + action_reference(PLAYER.hex))
+    assert parse_action("p:t:private:" + action_reference(PLAYER.hex)) == (
+        PLAYER.hex,
+        "three-view",
+        True,
+    )
+    assert parse_action("p:t:public:" + action_reference(PLAYER.hex)) == (
+        PLAYER.hex,
+        "three-view",
+        False,
+    )
     asset = SkinAsset(PLAYER.hex, "<b>&name</b>", PLAYER, SkinModel.UNKNOWN, "0" * 64, b"", None)
     assert "&lt;b&gt;&amp;name&lt;/b&gt;" in caption(asset)
 
@@ -856,7 +909,17 @@ async def test_rich_card_keeps_its_layout_when_an_action_is_pressed(harness: Har
         "Three-view",
         "Original",
     ]
-    assert labels[6:] == ["Open 3D", "Share", "Copy UUID"]
+    assert labels[6:] == ["Open 3D", "Share"]
+    assert all(row.align == "center" for row in rows)
+    uuid_line = next(
+        block
+        for block in blocks
+        if isinstance(block, InputRichBlockParagraph) and isinstance(block.text, list)
+    )
+    assert isinstance(uuid_line.text, list)
+    copy = uuid_line.text[-1]
+    assert isinstance(copy, RichTextButton) and copy.button.copy_text is not None
+    assert copy.button.copy_text.text == str(PLAYER)
 
     harness.session.calls.clear()
     await harness.dispatcher().feed_update(

@@ -147,14 +147,19 @@ class SkinService:
 
         return await self.cache.get_or_create(self.render_key(asset, kind), produce)
 
-    def viewer_url(self, asset: SkinAsset) -> str:
+    def viewer_url(self, asset: SkinAsset, *, locale: str | None = None) -> str:
         parsed = urlsplit(self.settings.mini_app_url)
         params = dict(parse_qsl(parsed.query))
         params.pop("uuid", None)
         params.pop("upload", None)
+        params.pop("lang", None)
         params["uuid" if asset.uuid else "upload"] = (
             asset.uuid.hex if asset.uuid else asset.content_hash
         )
+        if locale:
+            # Mini Apps launched from a keyboard button or inline mode get empty initData, so
+            # the caller's language travels in the URL instead of Telegram.WebApp.
+            params["lang"] = locale
         return urlunsplit(parsed._replace(query=urlencode(params)))
 
     async def read_skin(self, digest: str) -> bytes:

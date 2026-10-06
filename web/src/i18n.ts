@@ -96,10 +96,19 @@ function supportedLocale(language: string): Locale | undefined {
   return parts[0] === 'en' ? 'en' : undefined;
 }
 
-export function viewerLocale(app: Pick<TelegramWebApp, 'initDataUnsafe'> | undefined, languages: readonly string[]): Locale {
-  if (app) return supportedLocale(app.initDataUnsafe?.user?.language_code ?? '') ?? 'en';
-  for (const language of languages) {
-    const locale = supportedLocale(language);
+export function viewerLocale(
+  app: Pick<TelegramWebApp, 'initDataUnsafe'> | undefined,
+  languages: readonly string[],
+  requested?: string | null,
+): Locale {
+  // Inline-mode buttons launch the Web App with empty or user-less initData, so the bot also
+  // passes the sender's language in the URL. Telegram's own language still wins whenever the
+  // client reports it, and a Web App launched inside Telegram never falls back to the browser.
+  const signals = app
+    ? [app.initDataUnsafe?.user?.language_code ?? '', requested ?? '']
+    : [requested ?? '', ...languages];
+  for (const signal of signals) {
+    const locale = supportedLocale(signal);
     if (locale) return locale;
   }
   return 'en';

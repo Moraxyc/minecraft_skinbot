@@ -50,7 +50,7 @@ async def test_locale_follows_each_update_with_english_fallback(
     assert "Notch" in (reply.caption or "") and str(PLAYER) in (reply.caption or "")
     head = reply.reply_markup.inline_keyboard[0][0]
     assert head.text == ("头像" if chinese else "Head")
-    assert head.callback_data == f"p:h:{action_reference(PLAYER.hex)}"
+    assert head.callback_data == f"p:h:private:{action_reference(PLAYER.hex)}"
 
 
 async def test_callback_edits_use_the_clickers_language_not_the_message_sender(
