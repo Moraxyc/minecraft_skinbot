@@ -109,6 +109,45 @@ docker run --env-file .env -e API_HOST=0.0.0.0 -p 127.0.0.1:8080:8080 minecraft-
 
 The container runs as an unprivileged user. `/app/cache` can use a writable volume. Polling supports one active bot process; horizontally scaled polling requires a separate delivery design.
 
+## Nix packaging and NixOS deployment
+
+The flake packages the bot from `uv.lock` with uv2nix and Python 3.12. The viewer uses `package-lock.json` through `importNpmLock`; dependency integrity comes directly from that lock file.
+
+flake-parts organizes package outputs in `nix/packages.nix`, development tools and checks in `nix/dev/`, and NixOS exports in `nix/nixos.nix`.
+
+```sh
+nix build .#bot
+nix build .#web
+nix flake check
+nix develop
+```
+
+`bot` provides the `minecraft-skin-bot` executable. `web` contains static assets for same-origin hosting. The development shell provides the locked Python environment, uv and Node.js 24.
+
+Import `nixosModules.default` from this flake into your NixOS configuration:
+
+```nix
+{ inputs, ... }:
+{
+  imports = [ inputs.minecraft-skin-bot.nixosModules.default ];
+  services.minecraft-skin-bot = {
+    enable = true;
+    tokenFile = "/run/secrets/minecraft-skin-bot-token";
+    cacheChatId = -1001234567890;
+    miniAppUrl = "https://skin.example.com";
+    publicBaseUrl = "https://skin.example.com";
+    nginx = {
+      enable = true;
+      hostName = "skin.example.com";
+    };
+  };
+}
+```
+
+Supply `tokenFile` as a quoted runtime path managed by your secret manager. systemd loads that file as a credential and the startup wrapper supplies `TELEGRAM_BOT_TOKEN` inside the bot process. The service uses a dynamic user and disposable content storage at `/var/cache/minecraft-skin-bot`.
+
+The optional nginx integration builds the viewer with `publicBaseUrl`, serves static assets and proxies `/api/` and `/healthz`. The Bot API supplies the bot username at startup. Configure HTTPS certificates on that nginx virtual host using your existing certificate or ACME setup. `apiHost`, `apiPort`, `uploadTtlSeconds`, `richMessages`, `package` and `webPackage` provide deployment overrides.
+
 ## Verification
 
 ```sh
