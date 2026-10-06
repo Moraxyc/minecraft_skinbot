@@ -1,6 +1,6 @@
 import { inlineReference, loadProfile, parseReference, ViewerError } from './api';
 import { localizeDocument, translator, viewerLocale } from './i18n';
-import { copyInlineQuery, getTelegram, initializeTelegram, shareInline, telegramBotURL } from './telegram';
+import { copyInlineQuery, getTelegram, initializeTelegram, shareInline } from './telegram';
 import { Viewer, type AnimationName } from './viewer';
 import './style.css';
 
@@ -30,17 +30,14 @@ function share(kind: 'skin' | 'view'): void {
   const query = `${kind} ${inlineReference(reference)}`;
   const outcome = shareInline(app, query);
   const fallback = element<HTMLAnchorElement>('share-fallback');
-  const url = telegramBotURL(botUsername);
-  fallback.hidden = outcome !== 'manual' || !url;
-  if (url) {
-    fallback.href = url;
-  }
+  fallback.hidden = outcome !== 'manual';
+  fallback.href = `https://t.me/${botUsername}`;
   const input = element<HTMLTextAreaElement>('inline-query');
-  input.value = url ? `@${botUsername.replace(/^@/, '')} ${query}` : query;
+  input.value = `@${botUsername} ${query}`;
   input.hidden = outcome !== 'manual';
   element('copy-query').hidden = outcome !== 'manual';
   element('share-status').textContent = outcome === 'manual'
-    ? t(url ? 'manualShare' : 'manualShareWithoutBot')
+    ? t('manualShare')
     : t('chooseChat');
 }
 

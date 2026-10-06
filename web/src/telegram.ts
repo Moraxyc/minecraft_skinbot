@@ -49,12 +49,6 @@ export function initializeTelegram(app: TelegramWebApp | undefined): () => void 
   return () => { for (const event of events) app.offEvent(event, update); };
 }
 
-export function telegramBotURL(botUsername: string): string | null {
-  const name = botUsername.replace(/^@/, '');
-  if (!/^[a-z0-9_]{5,32}$/i.test(name)) return null;
-  return `https://t.me/${name}`;
-}
-
 export function shareInline(app: TelegramWebApp | undefined, query: string): 'inline' | 'manual' {
   if (app?.switchInlineQuery && app.isVersionAtLeast?.('6.7')) {
     try {

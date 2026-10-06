@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { copyInlineQuery, initializeTelegram, shareInline, telegramBotURL, type TelegramWebApp } from '../src/telegram';
+import { copyInlineQuery, initializeTelegram, shareInline, type TelegramWebApp } from '../src/telegram';
 
 function telegram(overrides: Partial<TelegramWebApp> = {}): TelegramWebApp {
   return {
@@ -23,14 +23,9 @@ describe('Telegram inline handoff', () => {
       switchInlineQuery: () => { throw new Error('WebAppInlineModeDisabled'); },
     });
     expect(shareInline(app, 'view 1234')).toBe('manual');
-    const url = new URL(telegramBotURL('minecraft_skin_bot') ?? '');
-    expect(url.origin).toBe('https://t.me');
-    expect(url.pathname).toBe('/minecraft_skin_bot');
-    expect(url.search).toBe('');
   });
-  it('keeps a manual handoff when a bot link is unavailable', () => {
+  it('keeps a manual handoff in a plain browser', () => {
     expect(shareInline(undefined, 'view 1234')).toBe('manual');
-    expect(telegramBotURL('https://attacker.example')).toBeNull();
   });
   it.each(['unavailable', 'rejected'])('keeps inline text selectable when clipboard is %s', async (mode) => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: mode === 'unavailable' ? undefined : { writeText: vi.fn().mockRejectedValue(new Error('Permission denied')) } });

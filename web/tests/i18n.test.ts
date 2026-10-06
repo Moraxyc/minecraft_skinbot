@@ -24,6 +24,7 @@ describe('viewer language sources', () => {
   it('uses the requested language for inline launches without a Telegram user', () => {
     expect(viewerLocale({}, [], 'zh-Hans')).toBe('zh-Hans');
     expect(viewerLocale({}, [], 'zh-CN')).toBe('zh-Hans');
+    expect(viewerLocale({ initDataUnsafe: {} }, ['en-US'], 'zh-CN')).toBe('zh-Hans');
     expect(viewerLocale({}, ['en-US'], 'zh-Hant')).toBe('en');
     expect(viewerLocale({}, [], 'fr')).toBe('en');
   });
@@ -31,10 +32,6 @@ describe('viewer language sources', () => {
   it('prefers the Telegram user language over the requested language inside Telegram', () => {
     expect(viewerLocale({ initDataUnsafe: { user: { language_code: 'en-US' } } }, [], 'zh-CN')).toBe('en');
     expect(viewerLocale({ initDataUnsafe: { user: { language_code: 'zh' } } }, [], 'en')).toBe('zh-Hans');
-  });
-
-  it('accepts the requested language when Telegram reports no user', () => {
-    expect(viewerLocale({ initDataUnsafe: {} }, ['en-US'], 'zh-CN')).toBe('zh-Hans');
   });
 });
 
