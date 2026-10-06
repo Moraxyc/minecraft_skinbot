@@ -59,13 +59,20 @@ async def upstream() -> AsyncIterator[Harness]:
     listener.bind(("127.0.0.1", 0))
     port = listener.getsockname()[1]
     await web.SockSite(runner, listener).start()
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=0.05)) as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
 
         class LocalSession:
             def get(self, url: str, *, allow_redirects: bool) -> Any:
+                path = urlsplit(url).path
+                timeout = (
+                    aiohttp.ClientTimeout(total=0.05)
+                    if responses[path][1] == "timeout"
+                    else session.timeout
+                )
                 return session.get(
-                    f"http://127.0.0.1:{port}" + urlsplit(url).path,
+                    f"http://127.0.0.1:{port}" + path,
                     allow_redirects=allow_redirects,
+                    timeout=timeout,
                 )
 
         provider = MojangProfileProvider(cast(aiohttp.ClientSession, LocalSession()))
@@ -134,6 +141,8 @@ async def test_missing_malformed_redirect_and_timeout_have_clean_errors(
         await upstream.provider.get_profile(NOTCH)
     assert error.value.status == (404 if status in {204, 404} else 502)
     assert NOTCH.hex not in error.value.message
+    if body == "timeout":
+        assert isinstance(error.value.__cause__, TimeoutError)
 
 
 async def test_profile_rejects_untrusted_texture_and_oversized_response(upstream: Harness) -> None:
