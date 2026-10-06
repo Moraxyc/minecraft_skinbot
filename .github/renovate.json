@@ -2,5 +2,40 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>Moraxyc/renovate-config"
+  ],
+  "automergeType": "pr",
+  "platformAutomerge": false,
+  "ignoreTests": false,
+  "minimumReleaseAge": "0 days",
+  "lockFileMaintenance": {
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Require manual review unless a local automerge rule matches",
+      "matchPackageNames": ["*"],
+      "minimumReleaseAge": "0 days",
+      "automerge": false
+    },
+    {
+      "description": "Automerge non-major development dependency updates after CI passes",
+      "matchManagers": ["npm", "pep621"],
+      "matchDepTypes": ["devDependencies", "dependency-groups"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge non-major CI action updates and digest pins",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["action"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
+      "automerge": true
+    },
+    {
+      "description": "Require manual review for potentially breaking pre-1.0 minor updates",
+      "matchCurrentVersion": "/^0\\./",
+      "matchUpdateTypes": ["minor"],
+      "automerge": false
+    }
   ]
 }
