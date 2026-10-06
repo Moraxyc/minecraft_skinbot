@@ -37,6 +37,7 @@ from aiogram.types import (
     InputRichBlockDocument,
     InputRichBlockPhoto,
     Message,
+    MessageEntity,
     PhotoSize,
     RichBlockParagraph,
     RichMessage,
@@ -238,6 +239,165 @@ def callback_update(data: str, *, rich_card: bool = False) -> Update:
             message=card,
         ),
     )
+
+
+def chat_update(chat_type: str, **data: Any) -> Update:
+    incoming = Message(
+        message_id=4,
+        date=datetime.now(UTC),
+        chat=Chat(id=-100456, type=chat_type),
+        from_user=None if chat_type == "channel" else USER,
+        **data,
+    )
+    if chat_type == "channel":
+        return Update(update_id=4, channel_post=incoming)
+    return Update(update_id=4, message=incoming)
+
+
+@pytest.mark.parametrize(
+    ("chat_type", "text", "entity"),
+    [
+        ("group", "Notch", None),
+        ("supergroup", "/help", MessageEntity(type="bot_command", offset=0, length=5)),
+        ("channel", "Notch", None),
+        ("group", "@other_skin_bot Notch", MessageEntity(type="mention", offset=0, length=15)),
+        ("group", "@minecraft_skin_bot Notch", None),
+        (
+            "group",
+            "Skin Bot Notch",
+            MessageEntity(type="text_mention", offset=0, length=8, user=USER),
+        ),
+    ],
+)
+async def test_nonprivate_queries_wait_for_an_explicit_own_mention(
+    harness: Harness, chat_type: str, text: str, entity: MessageEntity | None
+) -> None:
+    await harness.dispatcher().feed_update(
+        harness.bot, chat_update(chat_type, text=text, entities=[entity] if entity else [])
+    )
+    assert harness.provider.lookups == 0 and harness.session.calls == []
+
+
+@pytest.mark.parametrize(
+    ("chat_type", "text", "mention"),
+    [
+        ("group", "@minecraft_skin_bot Notch", "@minecraft_skin_bot"),
+        ("supergroup", "Notch @MINECRAFT_SKIN_BOT", "@MINECRAFT_SKIN_BOT"),
+        ("channel", "Notch @minecraft_skin_bot", "@minecraft_skin_bot"),
+        ("group", "🎮 Skin Bot 🎮 Notch", "🎮 Skin Bot 🎮"),
+    ],
+)
+async def test_own_mentions_resolve_queries_with_utf16_entities(
+    harness: Harness, chat_type: str, text: str, mention: str
+) -> None:
+    entity = MessageEntity(
+        type="mention" if mention.startswith("@") else "text_mention",
+        offset=len(text[: text.index(mention)].encode("utf-16-le")) // 2,
+        length=len(mention.encode("utf-16-le")) // 2,
+        user=User(id=harness.bot.id, is_bot=True, first_name="Skin Bot")
+        if not mention.startswith("@")
+        else None,
+    )
+    dispatcher = harness.dispatcher()
+    await dispatcher.feed_update(harness.bot, chat_update(chat_type, text=text, entities=[entity]))
+    output = harness.session.calls[-1]
+    assert isinstance(output, SendRichMessage)
+    assert harness.provider.lookups == 1
+    buttons = [
+        block
+        for block in output.rich_message.blocks or []
+        if isinstance(block, InputRichBlockButtons)
+    ][-1].buttons
+    assert buttons[0].url == f"https://t.me/minecraft_skin_bot?startapp={PLAYER.hex}"
+    assert buttons[0].web_app is None
+    assert "channel_post" in dispatcher.resolve_used_update_types()
+
+
+@pytest.mark.parametrize("chat_type", ["private", "group", "channel"])
+async def test_commands_for_other_bots_are_ignored_in_every_chat(
+    harness: Harness, chat_type: str
+) -> None:
+    command = "/help@other_skin_bot"
+    await harness.dispatcher().feed_update(
+        harness.bot,
+        chat_update(
+            chat_type,
+            text=command,
+            entities=[MessageEntity(type="bot_command", offset=0, length=len(command))],
+        ),
+    )
+    assert harness.session.calls == []
+
+
+@pytest.mark.parametrize(("chat_type", "command"), [("group", "/help"), ("channel", "/start")])
+async def test_addressed_commands_keep_the_lightweight_entry_points(
+    harness: Harness, chat_type: str, command: str
+) -> None:
+    text = command + "@MINECRAFT_SKIN_BOT"
+    await harness.dispatcher().feed_update(
+        harness.bot,
+        chat_update(
+            chat_type,
+            text=text,
+            entities=[MessageEntity(type="bot_command", offset=0, length=len(text))],
+        ),
+    )
+    assert [call.__api_method__ for call in harness.session.calls] == ["sendMessage"]
+    assert "@minecraft_skin_bot Notch" in getattr(harness.session.calls[-1], "text", "")
+
+
+async def test_channel_query_failures_return_clean_errors_without_a_requester(
+    harness: Harness,
+) -> None:
+    harness.session.rich_error = "timeout"
+    mention = "@minecraft_skin_bot"
+    await harness.dispatcher().feed_update(
+        harness.bot,
+        chat_update(
+            "channel",
+            text=mention + " Notch",
+            entities=[MessageEntity(type="mention", offset=0, length=len(mention))],
+        ),
+    )
+    assert [call.__api_method__ for call in harness.session.calls] == [
+        "sendRichMessage",
+        "sendMessage",
+    ]
+    assert getattr(harness.session.calls[-1], "chat_id", None) == -100456
+    assert "Skin service is busy" in getattr(harness.session.calls[-1], "text", "")
+
+
+@pytest.mark.parametrize(
+    ("chat_type", "caption", "accepted"),
+    [
+        ("group", "", False),
+        ("group", "@other_skin_bot", False),
+        ("group", "@minecraft_skin_bot", True),
+        ("channel", "@minecraft_skin_bot", True),
+    ],
+)
+async def test_nonprivate_uploads_use_caption_mentions_before_downloading(
+    harness: Harness, chat_type: str, caption: str, accepted: bool
+) -> None:
+    harness.session.upload = harness.provider.png
+    await harness.dispatcher().feed_update(
+        harness.bot,
+        chat_update(
+            chat_type,
+            document=Document(
+                file_id="upload", file_unique_id="upload", file_size=len(harness.provider.png)
+            ),
+            caption=caption,
+            caption_entities=[MessageEntity(type="mention", offset=0, length=len(caption))]
+            if caption
+            else [],
+        ),
+    )
+    if accepted:
+        assert isinstance(harness.session.calls[-1], SendPhoto)
+        assert harness.session.downloaded_bytes == len(harness.provider.png)
+    else:
+        assert harness.session.calls == [] and harness.session.downloaded_bytes == 0
 
 
 @pytest.mark.parametrize("reference", ["Notch", str(PLAYER)])

@@ -103,6 +103,37 @@ def unchanged(error: TelegramBadRequest) -> bool:
     return "not modified" in error.message.lower()
 
 
+def addressed_query(message: Message, bot: Bot, bot_username: str) -> str | None:
+    """Keep explicit bot addressing separate from the Minecraft query."""
+    text = message.text if message.text is not None else message.caption or ""
+    entities = message.entities if message.text is not None else message.caption_entities
+    spans = []
+    for entity in entities or []:
+        own_mention = entity.type == "mention" and entity.extract_from(text).lower() == (
+            "@" + bot_username.lower()
+        )
+        own_user = (
+            entity.type == "text_mention" and entity.user is not None and entity.user.id == bot.id
+        )
+        if own_mention or own_user:
+            spans.append((entity.offset * 2, (entity.offset + entity.length) * 2))
+    # Telegram offsets count UTF-16 units, including both units of an emoji.
+    encoded = text.encode("utf-16-le")
+    for start, end in sorted(spans, reverse=True):
+        encoded = encoded[:start] + b" \x00" + encoded[end:]
+    query = encoded.decode("utf-16-le").strip()
+    command = query.split(maxsplit=1)[0] if query else ""
+    addressed_command = False
+    if command.startswith("/") and "@" in command:
+        target = command.partition("@")[2]
+        if target.lower() != bot_username.lower():
+            return None
+        addressed_command = True
+    if message.chat.type != "private" and not (spans or addressed_command):
+        return None
+    return query
+
+
 class BoundedDownload(BytesIO):
     def __init__(self, limit: int) -> None:
         super().__init__()
@@ -209,7 +240,15 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
     messages = SkinMessages(service, settings, bot_username)
     inline = InlineSkins(service, settings, bot_username)
 
-    @router.message(CommandStart())
+    async def addressed(message: Message, bot: Bot) -> bool | dict[str, str]:
+        query = addressed_query(message, bot, bot_username)
+        return False if query is None else {"query_text": query}
+
+    router.message.filter(addressed)
+    router.channel_post.filter(addressed)
+
+    @router.channel_post(CommandStart(ignore_mention=True))
+    @router.message(CommandStart(ignore_mention=True))
     async def start(message: Message) -> None:
         await message.answer(
             "<b>Minecraft Skin Bot</b>\n\n"
@@ -219,11 +258,13 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
             parse_mode="HTML",
         )
 
-    @router.message(Command("help"))
+    @router.channel_post(Command("help", ignore_mention=True))
+    @router.message(Command("help", ignore_mention=True))
     async def help_message(message: Message) -> None:
         await message.answer(
             "Send <code>Notch</code> or a Minecraft UUID to see a skin.\n"
             "For a standard photo, send <code>skin Notch</code>.\n"
+            "In groups and channels, mention this bot in the query or file caption.\n"
             "Upload a 64×64 or 64×32 skin PNG as a file.\n"
             f"Use <code>@{escape(bot_username)} Notch</code> to share "
             "Skin, Three-view, Head or Original.\n"
@@ -232,6 +273,7 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
             parse_mode="HTML",
         )
 
+    @router.channel_post(F.document)
     @router.message(F.document)
     async def upload(message: Message, bot: Bot) -> None:
         document = message.document
@@ -257,13 +299,15 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
         except UtilityError as error:
             await message.answer(error_text(error), parse_mode="HTML")
 
+    @router.channel_post(F.photo)
     @router.message(F.photo)
     async def compressed_upload(message: Message) -> None:
         await message.answer("Send the skin PNG as a file to preserve its original pixels.")
 
+    @router.channel_post(F.text)
     @router.message(F.text)
-    async def lookup(message: Message, bot: Bot) -> None:
-        text = message.text or ""
+    async def lookup(message: Message, bot: Bot, query_text: str) -> None:
+        text = query_text
         if text.startswith("/"):
             await help_message(message)
             return
@@ -363,7 +407,7 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
                     is_personal=False,
                 )
             else:
-                target = event.update.message
+                target = event.update.message or event.update.channel_post
                 if target is None and event.update.callback_query:
                     callback_message = event.update.callback_query.message
                     target = callback_message if isinstance(callback_message, Message) else None
