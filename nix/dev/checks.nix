@@ -14,7 +14,13 @@
       inherit (config.packages) bot web;
       module = self.nixosModules.default;
       configuration =
-        address: nginx: tokenFile: package:
+        {
+          address,
+          nginx,
+          tokenFile,
+          package,
+          webhookUrl ? null,
+        }:
         (nixpkgs.lib.nixosSystem {
           inherit pkgs;
           modules = [
@@ -30,6 +36,7 @@
               services.minecraft-skin-bot = {
                 enable = true;
                 inherit tokenFile;
+                inherit webhookUrl;
                 package = lib.mkForce package;
                 apiHost = address;
                 cacheChatId = -1001234567890;
@@ -43,16 +50,49 @@
             }
           ];
         }).config;
-      proxied = configuration "127.0.0.1" true "/run/secrets/synthetic-skin-bot" bot;
-      direct = configuration "::1" false "/run/secrets/synthetic-skin-bot" bot;
-      invalid = configuration "127.0.0.1" false "/nix/store/synthetic-token" bot;
-      probe = configuration "127.0.0.1" false "/run/secrets/synthetic-skin-bot" (
-        pkgs.writeShellScriptBin "minecraft-skin-bot" ''
+      proxied = configuration {
+        address = "127.0.0.1";
+        nginx = true;
+        tokenFile = "/run/secrets/synthetic-skin-bot";
+        package = bot;
+      };
+      hooked = configuration {
+        address = "127.0.0.1";
+        nginx = true;
+        tokenFile = "/run/secrets/synthetic-skin-bot";
+        package = bot;
+        webhookUrl = "https://skin.example.com/telegram/webhook/";
+      };
+      direct = configuration {
+        address = "::1";
+        nginx = false;
+        tokenFile = "/run/secrets/synthetic-skin-bot";
+        package = bot;
+      };
+      invalid = configuration {
+        address = "127.0.0.1";
+        nginx = false;
+        tokenFile = "/nix/store/synthetic-token";
+        package = bot;
+      };
+      invalidWebhook = configuration {
+        address = "127.0.0.1";
+        nginx = true;
+        tokenFile = "/run/secrets/synthetic-skin-bot";
+        package = bot;
+        webhookUrl = "https://skin.example.com/api/hook";
+      };
+      probe = configuration {
+        address = "127.0.0.1";
+        nginx = false;
+        tokenFile = "/run/secrets/synthetic-skin-bot";
+        package = pkgs.writeShellScriptBin "minecraft-skin-bot" ''
           test "$TELEGRAM_BOT_TOKEN" = '123456:synthetic_fixture_only'
-        ''
-      );
+        '';
+      };
       allAssertions = configuration: builtins.all (item: item.assertion) configuration.assertions;
       service = proxied.systemd.services.minecraft-skin-bot;
+      hookedService = hooked.systemd.services.minecraft-skin-bot;
       directService = direct.systemd.services.minecraft-skin-bot;
     in
     {
@@ -89,8 +129,10 @@
         // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
           module =
             assert allAssertions proxied;
+            assert allAssertions hooked;
             assert allAssertions direct;
             assert !allAssertions invalid;
+            assert !allAssertions invalidWebhook;
             assert
               service.serviceConfig.LoadCredential == [
                 "telegram-bot-token:/run/secrets/synthetic-skin-bot"
@@ -101,16 +143,25 @@
             assert !(service.environment ? API_UNIX_SOCKET);
             assert !(service.environment ? API_UNIX_SOCKET_GROUP);
             assert !(service.environment ? API_HOST);
+            assert !(service.environment ? TELEGRAM_WEBHOOK_URL);
+            assert
+              hookedService.environment.TELEGRAM_WEBHOOK_URL == "https://skin.example.com/telegram/webhook";
+            assert
+              hooked.services.nginx.virtualHosts."skin.example.com".locations."/telegram/webhook".proxyPass
+              == "http://unix:/run/minecraft-skin-bot/api.sock";
+            assert !(proxied.services.nginx.virtualHosts."skin.example.com".locations ? "/telegram/webhook");
             assert service.serviceConfig.Sockets == [ "minecraft-skin-bot.socket" ];
             assert !(service.serviceConfig ? RuntimeDirectory);
             assert !(service.serviceConfig ? SupplementaryGroups);
-            assert proxied.systemd.sockets.minecraft-skin-bot.listenStreams == [
-              "/run/minecraft-skin-bot/api.sock"
-            ];
-            assert proxied.systemd.sockets.minecraft-skin-bot.socketConfig == {
-              SocketMode = "0660";
-              SocketGroup = "nginx";
-            };
+            assert
+              proxied.systemd.sockets.minecraft-skin-bot.listenStreams == [
+                "/run/minecraft-skin-bot/api.sock"
+              ];
+            assert
+              proxied.systemd.sockets.minecraft-skin-bot.socketConfig == {
+                SocketMode = "0660";
+                SocketGroup = "nginx";
+              };
             assert proxied.systemd.sockets.minecraft-skin-bot.wantedBy == [ "sockets.target" ];
             assert !(direct.systemd.sockets ? minecraft-skin-bot);
             assert

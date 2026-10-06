@@ -10,6 +10,9 @@ let
   socketUnit = "minecraft-skin-bot.socket";
   proxyOverSocket = cfg.nginx.enable;
   proxyGroup = config.services.nginx.group;
+  webhookUrl = if cfg.webhookUrl == null then null else lib.removeSuffix "/" cfg.webhookUrl;
+  webhookMatch = if webhookUrl == null then null else builtins.match "https://[^/]+(/.*)" webhookUrl;
+  webhookPath = if webhookMatch == null then null else builtins.head webhookMatch;
 in
 {
   meta.maintainers = with lib.maintainers; [ moraxyc ];
@@ -53,6 +56,16 @@ in
       type = lib.types.port;
       default = 8080;
       description = "API listener port for deployments without the nginx integration.";
+    };
+    webhookUrl = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "https://skin.example.com/telegram/webhook";
+      description = ''
+        Public HTTPS endpoint that receives Telegram updates. Unset keeps long
+        polling. The bot draws the Telegram secret token at startup and
+        registers it with setWebhook, so no secret file is required.
+      '';
     };
     uploadTtlSeconds = lib.mkOption {
       type = lib.types.ints.between 60 31536000;
@@ -100,6 +113,16 @@ in
         assertion = cfg.nginx.enable -> cfg.nginx.hostName != "";
         message = "Set the nginx host name for the hosted viewer.";
       }
+      {
+        assertion =
+          cfg.webhookUrl == null
+          || (webhookPath != null && webhookPath != "/healthz" && !lib.hasPrefix "/api/" webhookPath);
+        message = ''
+          Set services.minecraft-skin-bot.webhookUrl to an https URL with a path,
+          such as https://skin.example.com/telegram/webhook, and keep it clear of
+          the reserved /api/ and /healthz routes.
+        '';
+      }
     ];
     systemd.sockets.minecraft-skin-bot = lib.mkIf proxyOverSocket {
       description = "Minecraft skin bot public viewer API socket";
@@ -115,19 +138,21 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
-      environment =
-        {
-          TELEGRAM_CACHE_CHAT_ID = toString cfg.cacheChatId;
-          MINI_APP_URL = cfg.miniAppUrl;
-          PUBLIC_BASE_URL = cfg.publicBaseUrl;
-          CACHE_DIR = "/var/cache/minecraft-skin-bot";
-          UPLOAD_TTL_SECONDS = toString cfg.uploadTtlSeconds;
-          TELEGRAM_RICH_MESSAGES = lib.boolToString cfg.richMessages;
-        }
-        // lib.optionalAttrs (!proxyOverSocket) {
-          API_HOST = cfg.apiHost;
-          API_PORT = toString cfg.apiPort;
-        };
+      environment = {
+        TELEGRAM_CACHE_CHAT_ID = toString cfg.cacheChatId;
+        MINI_APP_URL = cfg.miniAppUrl;
+        PUBLIC_BASE_URL = cfg.publicBaseUrl;
+        CACHE_DIR = "/var/cache/minecraft-skin-bot";
+        UPLOAD_TTL_SECONDS = toString cfg.uploadTtlSeconds;
+        TELEGRAM_RICH_MESSAGES = lib.boolToString cfg.richMessages;
+      }
+      // lib.optionalAttrs (!proxyOverSocket) {
+        API_HOST = cfg.apiHost;
+        API_PORT = toString cfg.apiPort;
+      }
+      // lib.optionalAttrs (webhookUrl != null) {
+        TELEGRAM_WEBHOOK_URL = webhookUrl;
+      };
       enableStrictShellChecks = true;
       script = ''
         TELEGRAM_BOT_TOKEN="$(<"$CREDENTIALS_DIRECTORY/telegram-bot-token")"
@@ -191,6 +216,15 @@ in
           };
           "/healthz" = {
             proxyPass = "http://unix:${socketPath}";
+          };
+        }
+        // lib.optionalAttrs (webhookPath != null) {
+          ${webhookPath} = {
+            proxyPass = "http://unix:${socketPath}";
+            extraConfig = ''
+              proxy_connect_timeout 3s;
+              proxy_read_timeout 25s;
+            '';
           };
         };
       };

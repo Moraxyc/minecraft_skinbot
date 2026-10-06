@@ -11,7 +11,9 @@ from minecraft_skin_bot.service import SkinAsset, SkinService
 logger = logging.getLogger(__name__)
 
 
-def create_web_app(service: SkinService, bot_username: str) -> web.Application:
+def create_web_app(
+    service: SkinService, bot_username: str, *, client_max_size: int = 1024
+) -> web.Application:
     origin_url = urlsplit(service.settings.mini_app_url)
     allowed_origin = f"{origin_url.scheme}://{origin_url.netloc}"
     limit = asyncio.Semaphore(32)
@@ -45,7 +47,7 @@ def create_web_app(service: SkinService, bot_username: str) -> web.Application:
             response.headers["Vary"] = "Origin"
         return response
 
-    app = web.Application(middlewares=[boundary], client_max_size=1024)
+    app = web.Application(middlewares=[boundary], client_max_size=client_max_size)
 
     def profile_json(asset: SkinAsset) -> web.Response:
         response = web.json_response(

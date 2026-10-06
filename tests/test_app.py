@@ -1,3 +1,4 @@
+import asyncio
 import os
 import socket
 import stat
@@ -8,12 +9,13 @@ from typing import Any, cast
 import aiohttp
 import pytest
 from aiogram import Bot, Dispatcher
-from aiogram.methods import AnswerInlineQuery, GetMe, SetMyCommands
+from aiogram.methods import AnswerInlineQuery, GetMe, SendMessage, SetMyCommands, SetWebhook
 from aiogram.methods.base import TelegramMethod, TelegramType
 from aiogram.types import Update, User
 from aiohttp import web
 from minecraft_skin_bot import app
 from minecraft_skin_bot.cache import FileCache
+from minecraft_skin_bot.config import Webhook
 from minecraft_skin_bot.service import SkinService
 from minecraft_skin_bot.web import create_web_app
 from test_service import settings
@@ -35,7 +37,7 @@ class StartupSession(TelegramSession):
         method: TelegramMethod[TelegramType],
         timeout: int | None = None,  # noqa: ASYNC109
     ) -> TelegramType:
-        if isinstance(method, (GetMe, SetMyCommands)):
+        if isinstance(method, (GetMe, SetMyCommands, SetWebhook)):
             self.calls.append(method)
             return cast(TelegramType, self.identity if isinstance(method, GetMe) else True)
         return await super().make_request(bot, method, timeout)
@@ -171,3 +173,80 @@ async def test_systemd_socket_listener_serves_api_from_inherited_descriptor(
         listener.close()
         await runner.cleanup()
         await service.close()
+
+
+async def test_webhook_registration_serves_secret_guarded_updates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    username = "runtime_skin_bot"
+    session = StartupSession(username)
+    bot = Bot("123456:SYNTHETIC_TEST_TOKEN_WITHOUT_ACCOUNT", session=session)
+    provider = StartupProvider()
+    webhook = Webhook(
+        "https://skin.example.com/telegram/hook", "/telegram/hook", "synthetic_secret"
+    )
+    runtime = replace(settings(tmp_path), bot_token=bot.token, api_port=0, webhook=webhook)
+    runner_type = web.AppRunner
+    runners: list[web.AppRunner] = []
+    polling_calls: list[str] = []
+
+    def create_runner(application: web.Application, **kwargs: Any) -> web.AppRunner:
+        runner = runner_type(application, **kwargs)
+        runners.append(runner)
+        return runner
+
+    async def poll(dispatcher: Dispatcher, current_bot: Bot, **kwargs: Any) -> None:
+        polling_calls.append("polling")
+        raise AssertionError("webhook delivery must not start long polling")
+
+    monkeypatch.setattr(app, "Bot", lambda token: bot)
+    monkeypatch.setattr(app, "MojangProfileProvider", lambda http: provider)
+    monkeypatch.setattr(web, "AppRunner", create_runner)
+    monkeypatch.setattr(Dispatcher, "start_polling", poll)
+
+    update = {
+        "update_id": 1,
+        "message": {
+            "message_id": 1,
+            "date": 1700000000,
+            "chat": {"id": 789, "type": "private"},
+            "from": {"id": 789, "is_bot": False, "first_name": "Test"},
+            "text": "/start",
+        },
+    }
+    delivered = asyncio.create_task(app.run(runtime))
+    try:
+        for _ in range(300):
+            if any(isinstance(call, SetWebhook) for call in session.calls) and runners[0].addresses:
+                break
+            await asyncio.sleep(0.01)
+        registration = next(call for call in session.calls if isinstance(call, SetWebhook))
+        assert registration.url == webhook.url
+        assert registration.secret_token == webhook.secret
+        assert {"message", "inline_query", "callback_query"} <= set(
+            registration.allowed_updates or []
+        )
+        port = runners[0].addresses[0][1]
+        async with aiohttp.ClientSession() as client:
+            url = f"http://127.0.0.1:{port}{webhook.path}"
+            async with client.post(url, json=update) as response:
+                assert response.status == 401
+            async with client.post(
+                url, json=update, headers={"X-Telegram-Bot-Api-Secret-Token": "stale"}
+            ) as response:
+                assert response.status == 401
+            async with client.post(
+                url, json=update, headers={"X-Telegram-Bot-Api-Secret-Token": webhook.secret}
+            ) as response:
+                assert response.status == 200
+        for _ in range(300):
+            if any(isinstance(call, SendMessage) for call in session.calls):
+                break
+            await asyncio.sleep(0.01)
+        reply = next(call for call in session.calls if isinstance(call, SendMessage))
+        assert f"@{username} Notch" in (reply.text or "")
+    finally:
+        delivered.cancel()
+        await asyncio.gather(delivered, return_exceptions=True)
+    assert polling_calls == []
+    assert session.closed and runners[0].addresses == []

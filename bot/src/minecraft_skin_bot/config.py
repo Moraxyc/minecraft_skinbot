@@ -1,7 +1,11 @@
 import os
+import re
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
+
+TELEGRAM_SECRET_PATTERN = re.compile(r"\A[A-Za-z0-9_-]{1,256}\Z")
 
 
 def _url(name: str, value: str) -> str:
@@ -24,6 +28,35 @@ def _url(name: str, value: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class Webhook:
+    """Public webhook endpoint that receives Telegram updates."""
+
+    url: str
+    path: str
+    secret: str = field(repr=False)
+
+
+def _webhook() -> Webhook | None:
+    """Read the optional webhook endpoint and its Telegram secret token."""
+    url = os.environ.get("TELEGRAM_WEBHOOK_URL", "")
+    if not url:
+        return None
+    endpoint = _url("TELEGRAM_WEBHOOK_URL", url)
+    parsed = urlsplit(endpoint)
+    if not parsed.path or parsed.query:
+        raise ValueError(
+            "Set TELEGRAM_WEBHOOK_URL to the full public webhook path, "
+            "such as https://skin.example.com/telegram/webhook."
+        )
+    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+    if secret and not TELEGRAM_SECRET_PATTERN.match(secret):
+        raise ValueError(
+            "Set TELEGRAM_WEBHOOK_SECRET to 1-256 characters of A-Z, a-z, 0-9, _ or -."
+        )
+    return Webhook(url=endpoint, path=parsed.path, secret=secret or secrets.token_urlsafe(32))
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     bot_token: str = field(repr=False)
     cache_chat_id: int
@@ -37,6 +70,7 @@ class Settings:
     upload_ttl_seconds: int = 86400
     max_upload_bytes: int = 1048576
     rich_messages: bool = True
+    webhook: Webhook | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -45,6 +79,7 @@ class Settings:
             raise ValueError("Set TELEGRAM_BOT_TOKEN to start the bot.")
         mini_app_url = _url("MINI_APP_URL", os.environ.get("MINI_APP_URL", ""))
         public_base_url = _url("PUBLIC_BASE_URL", os.environ.get("PUBLIC_BASE_URL", ""))
+        webhook = _webhook()
         cache_chat = os.environ.get("TELEGRAM_CACHE_CHAT_ID", "")
         if not cache_chat:
             raise ValueError("Set TELEGRAM_CACHE_CHAT_ID to enable all four inline media results.")
@@ -64,6 +99,7 @@ class Settings:
                 upload_ttl_seconds=int(os.environ.get("UPLOAD_TTL_SECONDS", "86400")),
                 rich_messages=os.environ.get("TELEGRAM_RICH_MESSAGES", "true").lower()
                 in {"true", "1", "yes"},
+                webhook=webhook,
             )
         except ValueError as exc:
             raise ValueError("Cache chat, port and upload TTL must be valid integers.") from exc
