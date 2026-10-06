@@ -9,8 +9,10 @@ from aiogram.types import (
     CopyTextButton,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InputMediaDocument,
     InputMediaPhoto,
     InputRichBlockButtons,
+    InputRichBlockDocument,
     InputRichBlockParagraph,
     InputRichBlockPhoto,
     InputRichBlockSectionHeading,
@@ -108,12 +110,16 @@ def preview_markup(
 
 
 def rich_profile(
-    asset: SkinAsset, photo: str | InputMediaPhoto, markup: InlineKeyboardMarkup
+    asset: SkinAsset,
+    media: InputMediaPhoto | InputMediaDocument,
+    markup: InlineKeyboardMarkup,
 ) -> InputRichMessage:
     blocks: list[InputRichBlockUnion] = [
         InputRichBlockSectionHeading(text=asset.name, size=3),
-        InputRichBlockPhoto(
-            photo=photo if isinstance(photo, InputMediaPhoto) else InputMediaPhoto(media=photo)
+        (
+            InputRichBlockPhoto(photo=media)
+            if isinstance(media, InputMediaPhoto)
+            else InputRichBlockDocument(document=media)
         ),
         InputRichBlockParagraph(text=f"Model: {asset.model.value.capitalize()}"),
     ]

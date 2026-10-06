@@ -86,6 +86,8 @@ Uploaded PNGs use content-addressed storage with a 24-hour default TTL. Uploadin
 
 Bot API 10.3 Rich Messages provide a heading, image, compact profile details and embedded action buttons on supported clients. Telegram provides no public automatic client capability check. Send `skin Notch` for a standard photo message, or set `TELEGRAM_RICH_MESSAGES=false` for that layout throughout the bot. An unavailable Rich Message method also falls back to a photo. Inline results and initial upload previews always use standard cached media or photos.
 
+Head, Front, Back, Side, Three-view and Original actions rewrite the message they were pressed on: a Rich Message keeps its layout through a rich edit, and a photo or document message is edited in place. Pressing the same action again leaves the message as is. When Telegram rejects the rich edit, the message falls back to the standard photo or document with the inline keyboard menu, and when no edit is possible at all the render is sent as a new standard message.
+
 Inline Mode supplies three cached photo results and one cached document result. `InlineQueryResultsButton.web_app` launches the query's viewer. Shared messages carry actions for 3D, original PNG, sharing again and UUID copying. Actions are rebuilt from the content reference.
 
 The Mini App uses `Telegram.WebApp.switchInlineQuery` (6.7+) for **Share Skin** and **Share Three-view**, with queries such as `skin <uuid>` and `view <uuid>`. Plain browser viewing offers a copyable inline query and a Telegram bot link. Telegram's `shareMessage` uses a user-bound prepared message; this public viewer uses inline sharing instead.

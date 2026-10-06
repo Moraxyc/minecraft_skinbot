@@ -13,8 +13,10 @@ from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
     ErrorEvent,
+    InlineKeyboardMarkup,
     InlineQuery,
     InlineQueryResultArticle,
+    InputMediaDocument,
     InputMediaPhoto,
     InputTextMessageContent,
     Message,
@@ -39,6 +41,20 @@ def error_text(error: UtilityError) -> str:
     return f"<b>{escape(error.title)}</b>\n\n{escape(error.message)}"
 
 
+def input_media(
+    file: BufferedInputFile, asset: SkinAsset, kind: RenderKind
+) -> InputMediaPhoto | InputMediaDocument:
+    caption_text = caption(asset)
+    if kind == "skin":
+        return InputMediaDocument(media=file, caption=caption_text, parse_mode="HTML")
+    return InputMediaPhoto(media=file, caption=caption_text, parse_mode="HTML")
+
+
+def unchanged(error: TelegramBadRequest) -> bool:
+    """Telegram rejects an edit that would change nothing, which is not a failure."""
+    return "not modified" in error.message.lower()
+
+
 class BoundedDownload(BytesIO):
     def __init__(self, limit: int) -> None:
         super().__init__()
@@ -56,6 +72,15 @@ class SkinMessages:
         self.settings = settings
         self.bot_username = bot_username
 
+    async def _media(self, asset: SkinAsset, kind: RenderKind) -> BufferedInputFile:
+        data = await self.service.preview(asset, kind)
+        return BufferedInputFile(data, filename=f"skin-{asset.content_hash[:12]}-{kind}.png")
+
+    def _markup(self, asset: SkinAsset, message: Message) -> InlineKeyboardMarkup:
+        return preview_markup(
+            asset, self.service, self.bot_username, private=message.chat.type == "private"
+        )
+
     async def send(
         self,
         bot: Bot,
@@ -65,11 +90,8 @@ class SkinMessages:
         *,
         rich: bool = True,
     ) -> None:
-        data = await self.service.preview(asset, kind)
-        file = BufferedInputFile(data, filename=f"skin-{asset.content_hash[:12]}-{kind}.png")
-        markup = preview_markup(
-            asset, self.service, self.bot_username, private=message.chat.type == "private"
-        )
+        file = await self._media(asset, kind)
+        markup = self._markup(asset, message)
         if kind == "skin":
             await bot.send_document(
                 message.chat.id,
@@ -97,6 +119,41 @@ class SkinMessages:
         await bot.send_photo(
             message.chat.id, file, caption=caption(asset), parse_mode="HTML", reply_markup=markup
         )
+
+    async def edit(
+        self,
+        bot: Bot,
+        message: Message,
+        asset: SkinAsset,
+        kind: RenderKind = "front",
+    ) -> None:
+        """Keep this message's layout in place; a rejected edit falls back to the default one."""
+        file = await self._media(asset, kind)
+        markup = self._markup(asset, message)
+        media = input_media(file, asset, kind)
+        if self.settings.rich_messages and message.rich_message is not None:
+            try:
+                await bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    rich_message=rich_profile(asset, media, markup),
+                )
+                return
+            except (TelegramNotFound, TelegramBadRequest) as error:
+                if isinstance(error, TelegramBadRequest) and unchanged(error):
+                    return
+        try:
+            await bot.edit_message_media(
+                media=media,
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                reply_markup=markup,
+            )
+            return
+        except (TelegramNotFound, TelegramBadRequest) as error:
+            if isinstance(error, TelegramBadRequest) and unchanged(error):
+                return
+        await self.send(bot, message, asset, kind, rich=False)
 
 
 def create_router(service: SkinService, settings: Settings, bot_username: str) -> Router:
@@ -184,7 +241,7 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
                     "Skin unavailable", "Send the player name or upload the skin again."
                 ) from error
             asset = await service.resolve(reference)
-            await messages.send(bot, callback.message, asset, kind)
+            await messages.edit(bot, callback.message, asset, kind)
         except UtilityError as error:
             await callback.message.answer(error_text(error), parse_mode="HTML")
 

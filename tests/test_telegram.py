@@ -11,9 +11,16 @@ import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import TelegramBadRequest, TelegramNotFound
-from aiogram.methods import AnswerInlineQuery, SendPhoto, SendRichMessage
+from aiogram.methods import (
+    AnswerInlineQuery,
+    EditMessageMedia,
+    EditMessageText,
+    SendPhoto,
+    SendRichMessage,
+)
 from aiogram.methods.base import TelegramMethod, TelegramType
 from aiogram.types import (
+    CallbackQuery,
     Chat,
     Document,
     File,
@@ -21,10 +28,15 @@ from aiogram.types import (
     InlineQuery,
     InlineQueryResultCachedDocument,
     InlineQueryResultCachedPhoto,
+    InputMediaDocument,
+    InputMediaPhoto,
     InputRichBlockButtons,
+    InputRichBlockDocument,
     InputRichBlockPhoto,
     Message,
     PhotoSize,
+    RichBlockParagraph,
+    RichMessage,
     Update,
     User,
 )
@@ -84,6 +96,7 @@ class TelegramSession(BaseSession):
         self.upload = b"malformed png"
         self.downloaded_bytes = 0
         self.rich_error: str | None = None
+        self.edit_errors: dict[str, str] = {}
         self.inline_error: str | None = None
         self.inline_error_count = 1
 
@@ -103,6 +116,8 @@ class TelegramSession(BaseSession):
                 raise TimeoutError("Synthetic transport timeout")
             error_type = TelegramNotFound if self.rich_error == "Not Found" else TelegramBadRequest
             raise error_type(method=method, message=self.rich_error)
+        if name in self.edit_errors:
+            raise TelegramBadRequest(method=method, message=self.edit_errors[name])
         if name == "answerInlineQuery" and self.inline_error and self.inline_error_count:
             self.inline_error_count -= 1
             raise TelegramBadRequest(method=method, message=self.inline_error)
@@ -194,6 +209,26 @@ def message(**data: Any) -> Message:
 def inline_update(text: str) -> Update:
     return Update(
         update_id=2, inline_query=InlineQuery(id="inline", from_user=USER, query=text, offset="")
+    )
+
+
+def callback_update(data: str, *, rich_card: bool = False) -> Update:
+    card = (
+        message(rich_message=RichMessage(blocks=[RichBlockParagraph(text="Notch")]))
+        if rich_card
+        else message(
+            photo=[PhotoSize(file_id="photo", file_unique_id="photo", width=384, height=640)]
+        )
+    )
+    return Update(
+        update_id=3,
+        callback_query=CallbackQuery(
+            id="callback",
+            from_user=USER,
+            chat_instance="chat-instance",
+            data=data,
+            message=card,
+        ),
     )
 
 
@@ -529,3 +564,110 @@ async def test_group_preview_uses_main_app_link(harness: Harness) -> None:
         harness.bot, message(), asset
     )
     assert isinstance(harness.session.calls[-1], SendPhoto)
+
+
+async def test_preview_action_rewrites_the_message_in_place(harness: Harness) -> None:
+    reference = f"p:h:{action_reference(PLAYER.hex)}"
+    await harness.dispatcher().feed_update(harness.bot, callback_update(reference))
+    assert [call.__api_method__ for call in harness.session.calls] == [
+        "answerCallbackQuery",
+        "editMessageMedia",
+    ]
+    edited = harness.session.calls[-1]
+    assert isinstance(edited, EditMessageMedia) and edited.message_id == 1
+    assert isinstance(edited.media, InputMediaPhoto) and edited.media.parse_mode == "HTML"
+    assert isinstance(edited.reply_markup, InlineKeyboardMarkup)
+    buttons = [button.text for row in edited.reply_markup.inline_keyboard for button in row]
+    assert buttons[:6] == ["Head", "Front", "Back", "Side", "Three-view", "Original"]
+
+    harness.session.calls.clear()
+    await harness.dispatcher().feed_update(
+        harness.bot, callback_update(f"p:o:{action_reference(PLAYER.hex)}")
+    )
+    original = harness.session.calls[-1]
+    assert isinstance(original, EditMessageMedia) and isinstance(original.media, InputMediaDocument)
+
+
+async def test_rich_card_keeps_its_layout_when_an_action_is_pressed(harness: Harness) -> None:
+    reference = f"p:h:{action_reference(PLAYER.hex)}"
+    await harness.dispatcher().feed_update(harness.bot, callback_update(reference, rich_card=True))
+    assert [call.__api_method__ for call in harness.session.calls] == [
+        "answerCallbackQuery",
+        "editMessageText",
+    ]
+    edited = harness.session.calls[-1]
+    assert isinstance(edited, EditMessageText) and edited.message_id == 1
+    assert edited.rich_message is not None
+    blocks = edited.rich_message.blocks or []
+    assert any(isinstance(block, InputRichBlockPhoto) for block in blocks)
+    rows = [block for block in blocks if isinstance(block, InputRichBlockButtons)]
+    labels = [button.text for row in rows for button in row.buttons]
+    assert labels[:6] == [
+        "Head",
+        "Front",
+        "Back",
+        "Side",
+        "Three-view",
+        "Original",
+    ]
+    assert labels[6:] == ["Open 3D", "Share", "Copy UUID"]
+
+    harness.session.calls.clear()
+    await harness.dispatcher().feed_update(
+        harness.bot, callback_update(f"p:o:{action_reference(PLAYER.hex)}", rich_card=True)
+    )
+    original = harness.session.calls[-1]
+    assert isinstance(original, EditMessageText)
+    assert original.rich_message is not None
+    assert any(
+        isinstance(block, InputRichBlockDocument) for block in original.rich_message.blocks or []
+    )
+
+
+async def test_unchanged_preview_action_sends_nothing_extra(harness: Harness) -> None:
+    harness.session.edit_errors["editMessageMedia"] = (
+        "Bad Request: message is not modified: specified new message content"
+    )
+    await harness.dispatcher().feed_update(
+        harness.bot, callback_update(f"p:h:{action_reference(PLAYER.hex)}")
+    )
+    assert [call.__api_method__ for call in harness.session.calls] == [
+        "answerCallbackQuery",
+        "editMessageMedia",
+    ]
+
+
+async def test_rejected_rich_edit_keeps_the_default_inline_keyboard_layout(
+    harness: Harness,
+) -> None:
+    harness.session.edit_errors["editMessageText"] = "Bad Request: method not found"
+    await harness.dispatcher().feed_update(
+        harness.bot,
+        callback_update(f"p:h:{action_reference(PLAYER.hex)}", rich_card=True),
+    )
+    assert [call.__api_method__ for call in harness.session.calls] == [
+        "answerCallbackQuery",
+        "editMessageText",
+        "editMessageMedia",
+    ]
+    edited = harness.session.calls[-1]
+    assert isinstance(edited, EditMessageMedia) and isinstance(edited.media, InputMediaPhoto)
+
+
+async def test_rejected_preview_edit_falls_back_to_the_default_layout(harness: Harness) -> None:
+    harness.session.edit_errors["editMessageMedia"] = "Bad Request: message can't be edited"
+    await harness.dispatcher().feed_update(
+        harness.bot, callback_update(f"p:h:{action_reference(PLAYER.hex)}")
+    )
+    assert [call.__api_method__ for call in harness.session.calls] == [
+        "answerCallbackQuery",
+        "editMessageMedia",
+        "sendPhoto",
+    ]
+    output = harness.session.calls[-1]
+    assert isinstance(output, SendPhoto) and isinstance(output.reply_markup, InlineKeyboardMarkup)
+    assert [button.text for row in output.reply_markup.inline_keyboard for button in row][6:] == [
+        "Open 3D",
+        "Share",
+        "Copy UUID",
+    ]
