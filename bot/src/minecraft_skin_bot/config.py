@@ -103,6 +103,10 @@ class Settings:
             )
         except ValueError as exc:
             raise ValueError("Cache chat, port and upload TTL must be valid integers.") from exc
+        if settings.cache_chat_id == 0 or abs(settings.cache_chat_id) >= 2**52:
+            raise ValueError(
+                "Set TELEGRAM_CACHE_CHAT_ID to the target's full signed numeric chat ID."
+            )
         if not 1 <= settings.api_port <= 65535 or settings.upload_ttl_seconds < 60:
             raise ValueError("Use a valid API port and an upload TTL of at least 60 seconds.")
         if settings.api_unix_socket is not None and not settings.api_unix_socket.is_absolute():

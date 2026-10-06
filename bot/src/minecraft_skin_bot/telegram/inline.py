@@ -1,10 +1,12 @@
 """Inline media is cached by skin bytes, view, renderer version and bot identity."""
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Literal
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramAPIError
 from aiogram.types import (
     BufferedInputFile,
     InlineQueryResultCachedDocument,
@@ -18,8 +20,10 @@ from minecraft_skin_bot.config import Settings
 from minecraft_skin_bot.service import SkinAsset, SkinService
 from minecraft_skin_bot.skin.renderer import RenderKind
 from minecraft_skin_bot.telegram.formatting import caption, share_markup
+from minecraft_skin_bot.telegram.media import MediaCacheUnavailable, cache_access_error
 
 InlineResult = InlineQueryResultUnion
+logger = logging.getLogger(__name__)
 
 # Telegram can stop accepting a file_id this bot uploaded, so refresh them well before the
 # content cache expires and let a lost or rotated media reference repair itself.
@@ -71,17 +75,25 @@ class InlineSkins:
         async def upload() -> bytes:
             data = await self.service.preview(asset, kind)
             file = BufferedInputFile(data, filename=f"skin-{asset.content_hash[:12]}-{kind}.png")
+            try:
+                if kind == "skin":
+                    message = await bot.send_document(
+                        self.settings.cache_chat_id, file, disable_notification=True
+                    )
+                else:
+                    message = await bot.send_photo(
+                        self.settings.cache_chat_id, file, disable_notification=True
+                    )
+            except TelegramAPIError as error:
+                cache_error = cache_access_error(error)
+                if cache_error is not None:
+                    raise cache_error from error
+                raise
             if kind == "skin":
-                message = await bot.send_document(
-                    self.settings.cache_chat_id, file, disable_notification=True
-                )
                 if not message.document:
                     raise RuntimeError("Telegram did not return the uploaded document")
                 identifier = message.document.file_id
             else:
-                message = await bot.send_photo(
-                    self.settings.cache_chat_id, file, disable_notification=True
-                )
                 if not message.photo:
                     raise RuntimeError("Telegram did not return the uploaded photo")
                 identifier = message.photo[-1].file_id
@@ -93,7 +105,7 @@ class InlineSkins:
         ).decode()
 
     async def results(
-        self, bot: Bot, query: SkinQuery
+        self, bot: Bot, query: SkinQuery, *, inline_query_id: str | None = None
     ) -> tuple[list[InlineResult], InlineQueryResultsButton]:
         asset = await self.service.resolve(query.reference)
         markup = share_markup(asset, self.bot_username)
@@ -104,30 +116,45 @@ class InlineSkins:
             ("Three-view", "three-view"),
             ("Head", "head"),
         )
-        for label, kind in previews:
-            file_id = await self.file_id(bot, asset, kind)
+        try:
+            for label, kind in previews:
+                file_id = await self.file_id(bot, asset, kind)
+                results.append(
+                    InlineQueryResultCachedPhoto(
+                        id=f"{kind}:{result_ids}",
+                        photo_file_id=file_id,
+                        title=label,
+                        description=asset.name,
+                        caption=caption(asset),
+                        parse_mode="HTML",
+                        reply_markup=markup,
+                    )
+                )
             results.append(
-                InlineQueryResultCachedPhoto(
-                    id=f"{kind}:{result_ids}",
-                    photo_file_id=file_id,
-                    title=label,
-                    description=asset.name,
+                InlineQueryResultCachedDocument(
+                    id=f"original:{result_ids}",
+                    title="Original Skin",
+                    description="Minecraft skin PNG",
+                    document_file_id=await self.file_id(bot, asset, "skin"),
                     caption=caption(asset),
                     parse_mode="HTML",
                     reply_markup=markup,
                 )
             )
-        results.append(
-            InlineQueryResultCachedDocument(
-                id=f"original:{result_ids}",
-                title="Original Skin",
-                description="Minecraft skin PNG",
-                document_file_id=await self.file_id(bot, asset, "skin"),
-                caption=caption(asset),
-                parse_mode="HTML",
-                reply_markup=markup,
+        except MediaCacheUnavailable as error:
+            logger.warning(
+                "Inline media cache unavailable (cache_upload): %s",
+                error,
+                extra={
+                    "operation": "cache_upload",
+                    "inline_query_id": inline_query_id,
+                    "telegram_method": error.telegram_method,
+                },
             )
-        )
+            return [], InlineQueryResultsButton(
+                text="Previews unavailable · Open 3D",
+                web_app=WebAppInfo(url=self.service.viewer_url(asset)),
+            )
         preferred = {"skin": 0, "view": 1, "head": 2}[query.preferred]
         if preferred:
             results.insert(0, results.pop(preferred))

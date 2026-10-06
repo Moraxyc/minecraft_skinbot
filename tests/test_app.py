@@ -17,12 +17,14 @@ from minecraft_skin_bot import app
 from minecraft_skin_bot.cache import FileCache
 from minecraft_skin_bot.config import Webhook
 from minecraft_skin_bot.service import SkinService
+from minecraft_skin_bot.telegram.media import MediaCacheUnavailable
 from minecraft_skin_bot.web import create_web_app
+from test_media_cache import CacheSession
 from test_service import settings
-from test_telegram import PLAYER, Provider, TelegramSession, inline_update, message
+from test_telegram import PLAYER, Provider, inline_update, message
 
 
-class StartupSession(TelegramSession):
+class StartupSession(CacheSession):
     def __init__(self, username: str | None) -> None:
         super().__init__()
         self.identity = User(id=123456, is_bot=True, first_name="Skin Bot", username=username)
@@ -111,6 +113,23 @@ async def test_missing_runtime_username_fails_with_actionable_message_and_closes
         await app.run(runtime)
     assert "BotFather" in caplog.text
     assert [call.__api_method__ for call in session.calls] == ["getMe"]
+    assert session.closed
+
+
+async def test_invalid_cache_target_stops_before_updates_with_actionable_message(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    session = StartupSession("runtime_skin_bot")
+    session.failure_method = "getChat"
+    bot = Bot("123456:SYNTHETIC_TEST_TOKEN_WITHOUT_ACCOUNT", session=session)
+    runtime = replace(settings(tmp_path), bot_token=bot.token, api_port=0)
+    monkeypatch.setattr(app, "Bot", lambda token: bot)
+    monkeypatch.setattr(app, "MojangProfileProvider", lambda http: StartupProvider())
+    with pytest.raises(MediaCacheUnavailable, match="TELEGRAM_CACHE_CHAT_ID"):
+        await app.run(runtime)
+    assert "full signed chat ID" in caplog.text
+    assert "chat not found" not in caplog.text
+    assert [call.__api_method__ for call in session.calls] == ["getMe", "getChat"]
     assert session.closed
 
 

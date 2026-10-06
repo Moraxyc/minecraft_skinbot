@@ -344,14 +344,16 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
             await query.answer([], cache_time=3, is_personal=False)
             return
         try:
-            results, button = await inline.results(bot, parsed)
+            results, button = await inline.results(bot, parsed, inline_query_id=query.id)
         except UtilityError as error:
             await query.answer(
                 [failure_article("lookup-error", error)], cache_time=5, is_personal=False
             )
             return
         try:
-            await query.answer(results, button=button, cache_time=60, is_personal=False)
+            await query.answer(
+                results, button=button, cache_time=60 if results else 0, is_personal=False
+            )
             return
         except TelegramBadRequest as error:
             if stale_query(error):
@@ -364,8 +366,10 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
             )
         try:
             await inline.invalidate(bot, parsed.reference)
-            results, button = await inline.results(bot, parsed)
-            await query.answer(results, button=button, cache_time=60, is_personal=False)
+            results, button = await inline.results(bot, parsed, inline_query_id=query.id)
+            await query.answer(
+                results, button=button, cache_time=60 if results else 0, is_personal=False
+            )
         except TelegramBadRequest as error:
             if stale_query(error):
                 logger.debug("Inline query expired before it was answered")

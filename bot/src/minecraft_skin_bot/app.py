@@ -16,6 +16,7 @@ from minecraft_skin_bot.config import Settings
 from minecraft_skin_bot.minecraft.client import MojangProfileProvider
 from minecraft_skin_bot.service import SkinService
 from minecraft_skin_bot.telegram import create_router
+from minecraft_skin_bot.telegram.media import MediaCacheUnavailable, validate_media_cache
 from minecraft_skin_bot.web import create_web_app
 
 
@@ -116,6 +117,15 @@ async def run(settings: Settings) -> None:
                 error = "Telegram getMe returned no bot username. Set a username in BotFather."
                 logging.getLogger(__name__).error("%s", error)
                 raise ValueError(error)
+            try:
+                await validate_media_cache(bot, settings.cache_chat_id)
+            except MediaCacheUnavailable as error:
+                logging.getLogger(__name__).error(
+                    "Telegram media cache validation failed: %s",
+                    error,
+                    extra={"operation": "cache_validation"},
+                )
+                raise
             dispatcher = Dispatcher()
             dispatcher.include_router(create_router(service, settings, me.username))
             application = create_web_app(
