@@ -42,7 +42,7 @@ from minecraft_skin_bot.telegram.formatting import (
     preview_markup,
 )
 from minecraft_skin_bot.telegram.inline import InlineSkins, SkinQuery, parse_query
-from minecraft_skin_bot.telegram.router import BoundedDownload, SkinMessages
+from minecraft_skin_bot.telegram.router import SkinMessages
 from PIL import Image
 
 PLAYER = UUID("069a79f4-44e9-4726-a5be-fca90e38aaf5")
@@ -82,6 +82,7 @@ class TelegramSession(BaseSession):
         super().__init__()
         self.calls: list[TelegramMethod[Any]] = []
         self.upload = b"malformed png"
+        self.downloaded_bytes = 0
         self.rich_error: str | None = None
         self.inline_error: str | None = None
         self.inline_error_count = 1
@@ -143,7 +144,10 @@ class TelegramSession(BaseSession):
         chunk_size: int = 65536,
         raise_for_status: bool = True,
     ) -> AsyncGenerator[bytes, None]:
-        yield self.upload
+        for offset in range(0, len(self.upload), chunk_size):
+            chunk = self.upload[offset : offset + chunk_size]
+            self.downloaded_bytes += len(chunk)
+            yield chunk
 
 
 @dataclass
@@ -354,14 +358,42 @@ async def test_unrelated_inline_failure_preserves_upload_cache(harness: Harness)
     assert recovered.results[0].id == "service-busy"
 
 
-async def test_uploaded_png_actions_remain_self_contained(harness: Harness) -> None:
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {
+            "file_name": "skin.PNG",
+            "mime_type": "image/png",
+            "thumbnail": PhotoSize(
+                file_id="thumbnail", file_unique_id="thumbnail", width=320, height=160
+            ),
+        },
+        {"file_name": "skin.jpg", "mime_type": "application/octet-stream"},
+        {"file_size": None},
+        {"file_name": "skin.png", "mime_type": "text/plain"},
+        {"file_name": "skin.jpg", "mime_type": "image/png"},
+        {"mime_type": "image/jpeg"},
+        {"file_name": "skin.jpg"},
+    ],
+    ids=[
+        "png",
+        "generic-mime",
+        "missing",
+        "mislabelled-mime",
+        "mislabelled-name",
+        "mime-only",
+        "name-only",
+    ],
+)
+async def test_uploaded_png_actions_remain_self_contained(
+    harness: Harness, metadata: dict[str, Any]
+) -> None:
     harness.session.upload = harness.provider.png
     uploaded = message(
         document=Document(
             file_id="upload",
             file_unique_id="upload",
-            file_size=len(harness.provider.png),
-            file_name="skin.png",
+            **{"file_size": len(harness.provider.png), **metadata},
         )
     )
     await harness.dispatcher().feed_update(harness.bot, Update(update_id=1, message=uploaded))
@@ -376,6 +408,31 @@ async def test_uploaded_png_actions_remain_self_contained(harness: Harness) -> N
     startapp = mini_app_link(asset, "minecraft_skin_bot").split("startapp=", 1)[1]
     assert len(startapp) == 44 and ":" not in startapp
     assert parse_action("p:t:" + startapp) == (reference, "three-view")
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"file_size": 0},
+        {"file_size": 1024 * 1024 + 1},
+        {"file_name": "skin.jpg", "mime_type": "image/jpeg"},
+    ],
+    ids=["empty", "oversize", "non-png"],
+)
+async def test_upload_metadata_rejects_before_download(
+    harness: Harness, metadata: dict[str, Any]
+) -> None:
+    harness.session.upload = harness.provider.png
+    uploaded = message(
+        document=Document(
+            file_id="upload",
+            file_unique_id="upload",
+            **{"file_size": len(harness.provider.png), **metadata},
+        )
+    )
+    await harness.dispatcher().feed_update(harness.bot, Update(update_id=1, message=uploaded))
+    assert [call.__api_method__ for call in harness.session.calls] == ["sendMessage"]
+    assert "Invalid skin" in getattr(harness.session.calls[-1], "text", "")
 
 
 async def test_standard_photo_prefix_preserves_all_skin_actions(harness: Harness) -> None:
@@ -421,18 +478,28 @@ async def test_file_cache_is_separate_for_bot_identity_and_arm_model(harness: Ha
     assert len({first, slim, other}) == 3
 
 
-async def test_invalid_upload_returns_clean_error_and_download_is_bounded(harness: Harness) -> None:
+@pytest.mark.parametrize("oversize", [False, True], ids=["false-png", "unknown-size-overflow"])
+async def test_invalid_upload_returns_clean_error_after_bounded_download(
+    harness: Harness, oversize: bool
+) -> None:
+    if oversize:
+        harness.session.upload = b"x" * (harness.settings.max_upload_bytes * 2)
     invalid = message(
         document=Document(
-            file_id="upload", file_unique_id="upload", file_size=20, file_name="skin.png"
+            file_id="upload",
+            file_unique_id="upload",
+            file_size=None if oversize else len(harness.session.upload),
+            file_name="skin.png",
+            mime_type="image/png",
         )
     )
     await harness.dispatcher().feed_update(harness.bot, Update(update_id=1, message=invalid))
     output = harness.session.calls[-1]
+    assert harness.session.calls[0].__api_method__ == "getFile"
     assert output.__api_method__ == "sendMessage"
     assert "Invalid skin" in getattr(output, "text", "")
-    with pytest.raises(UtilityError):
-        BoundedDownload(5).write(b"123456")
+    if oversize:
+        assert harness.session.downloaded_bytes < len(harness.session.upload)
 
 
 def test_query_and_action_boundaries_and_caption_escaping() -> None:

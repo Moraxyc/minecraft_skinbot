@@ -3,6 +3,7 @@
 import logging
 from html import escape
 from io import BytesIO
+from pathlib import PurePath
 from typing import Any
 
 from aiogram import Bot, F, Router
@@ -132,8 +133,18 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
         if not document:
             return
         try:
-            if document.file_size is None or document.file_size > settings.max_upload_bytes:
+            if document.file_size is not None and not (
+                0 < document.file_size <= settings.max_upload_bytes
+            ):
                 raise UtilityError("Invalid skin", "Expected a skin PNG smaller than 1 MiB.")
+            mime_type = (document.mime_type or "").partition(";")[0].strip().lower()
+            suffix = PurePath(document.file_name or "").suffix.lower()
+            # Sender-defined hints can disagree; confirm the format from the bytes.
+            if mime_type not in {"", "image/png", "application/octet-stream"} and suffix not in {
+                "",
+                ".png",
+            }:
+                raise UtilityError("Invalid skin", "Send a 64×64 or 64×32 Minecraft skin PNG.")
             destination = BoundedDownload(settings.max_upload_bytes)
             await bot.download(document, destination=destination, timeout=20)
             asset = await service.upload(destination.getvalue())
