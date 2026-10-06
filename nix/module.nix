@@ -6,7 +6,9 @@
 }:
 let
   cfg = config.services.minecraft-skin-bot;
-  upstreamHost = if lib.hasInfix ":" cfg.apiHost then "[${cfg.apiHost}]" else cfg.apiHost;
+  socketPath = "/run/minecraft-skin-bot/api.sock";
+  proxyOverSocket = cfg.nginx.enable;
+  proxyGroup = config.services.nginx.group;
 in
 {
   meta.maintainers = with lib.maintainers; [ moraxyc ];
@@ -44,12 +46,12 @@ in
     apiHost = lib.mkOption {
       type = lib.types.str;
       default = "127.0.0.1";
-      description = "API listener address.";
+      description = "API listener address for deployments without the nginx integration.";
     };
     apiPort = lib.mkOption {
       type = lib.types.port;
       default = 8080;
-      description = "API listener port.";
+      description = "API listener port for deployments without the nginx integration.";
     };
     uploadTtlSeconds = lib.mkOption {
       type = lib.types.ints.between 60 31536000;
@@ -90,8 +92,8 @@ in
         message = "Set HTTPS URLs for the Mini App and public API.";
       }
       {
-        assertion = cfg.apiPort >= 1024;
-        message = "Use an API listener port of at least 1024 behind the HTTPS proxy.";
+        assertion = cfg.nginx.enable || cfg.apiPort >= 1024;
+        message = "Use an API listener port of at least 1024 for the direct listener.";
       }
       {
         assertion = cfg.nginx.enable -> cfg.nginx.hostName != "";
@@ -103,16 +105,27 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
-      environment = {
-        TELEGRAM_CACHE_CHAT_ID = toString cfg.cacheChatId;
-        MINI_APP_URL = cfg.miniAppUrl;
-        PUBLIC_BASE_URL = cfg.publicBaseUrl;
-        CACHE_DIR = "/var/cache/minecraft-skin-bot";
-        API_HOST = cfg.apiHost;
-        API_PORT = toString cfg.apiPort;
-        UPLOAD_TTL_SECONDS = toString cfg.uploadTtlSeconds;
-        TELEGRAM_RICH_MESSAGES = lib.boolToString cfg.richMessages;
-      };
+      environment =
+        {
+          TELEGRAM_CACHE_CHAT_ID = toString cfg.cacheChatId;
+          MINI_APP_URL = cfg.miniAppUrl;
+          PUBLIC_BASE_URL = cfg.publicBaseUrl;
+          CACHE_DIR = "/var/cache/minecraft-skin-bot";
+          UPLOAD_TTL_SECONDS = toString cfg.uploadTtlSeconds;
+          TELEGRAM_RICH_MESSAGES = lib.boolToString cfg.richMessages;
+        }
+        // (
+          if proxyOverSocket then
+            {
+              API_UNIX_SOCKET = socketPath;
+              API_UNIX_SOCKET_GROUP = proxyGroup;
+            }
+          else
+            {
+              API_HOST = cfg.apiHost;
+              API_PORT = toString cfg.apiPort;
+            }
+        );
       enableStrictShellChecks = true;
       script = ''
         TELEGRAM_BOT_TOKEN="$(<"$CREDENTIALS_DIRECTORY/telegram-bot-token")"
@@ -154,6 +167,11 @@ in
         LockPersonality = true;
         CapabilityBoundingSet = "";
         AmbientCapabilities = "";
+      }
+      // lib.optionalAttrs proxyOverSocket {
+        RuntimeDirectory = "minecraft-skin-bot";
+        RuntimeDirectoryMode = "0755";
+        SupplementaryGroups = [ proxyGroup ];
       };
     };
     services.nginx = lib.mkIf cfg.nginx.enable {
@@ -165,14 +183,14 @@ in
             tryFiles = "$uri $uri/ /index.html";
           };
           "/api/" = {
-            proxyPass = "http://${upstreamHost}:${toString cfg.apiPort}";
+            proxyPass = "http://unix:${socketPath}";
             extraConfig = ''
               proxy_connect_timeout 3s;
               proxy_read_timeout 25s;
             '';
           };
           "/healthz" = {
-            proxyPass = "http://${upstreamHost}:${toString cfg.apiPort}";
+            proxyPass = "http://unix:${socketPath}";
           };
         };
       };

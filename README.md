@@ -42,6 +42,8 @@ Supply environment variables through your process manager or shell. `.env.exampl
 | `CACHE_DIR` | Disposable content cache directory; default `cache` |
 | `API_HOST` | API bind address; default `127.0.0.1` |
 | `API_PORT` | API bind port; default `8080` |
+| `API_UNIX_SOCKET` | Absolute unix socket path; replaces the TCP listener when set |
+| `API_UNIX_SOCKET_GROUP` | Group granted access to that unix socket |
 | `UPLOAD_TTL_SECONDS` | Upload availability; default `86400`, minimum `60` |
 | `TELEGRAM_RICH_MESSAGES` | Rich Message enhancement; default `true`; use `false` for classic photo messages |
 
@@ -146,7 +148,7 @@ Import `nixosModules.default` from this flake into your NixOS configuration:
 
 Supply `tokenFile` as a quoted runtime path managed by your secret manager. systemd loads that file as a credential and the startup wrapper supplies `TELEGRAM_BOT_TOKEN` inside the bot process. The service uses a dynamic user and disposable content storage at `/var/cache/minecraft-skin-bot`.
 
-The optional nginx integration builds the viewer with `publicBaseUrl`, serves static assets and proxies `/api/` and `/healthz`. The Bot API supplies the bot username at startup. Configure HTTPS certificates on that nginx virtual host using your existing certificate or ACME setup. `apiHost`, `apiPort`, `uploadTtlSeconds`, `richMessages`, `package` and `webPackage` provide deployment overrides.
+The optional nginx integration builds the viewer with `publicBaseUrl`, serves static assets and proxies `/api/` and `/healthz`. With `nginx.enable = true` the bot drops the TCP listener and binds `/run/minecraft-skin-bot/api.sock` with group access for `services.nginx.group`; nginx proxies that socket directly. The Bot API supplies the bot username at startup. Configure HTTPS certificates on that nginx virtual host using your existing certificate or ACME setup. `apiHost` and `apiPort` only configure the direct listener used when the nginx integration is off; `uploadTtlSeconds`, `richMessages`, `package` and `webPackage` provide deployment overrides.
 
 ## Verification
 

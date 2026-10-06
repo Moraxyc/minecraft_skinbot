@@ -14,7 +14,7 @@
       inherit (config.packages) bot web;
       module = self.nixosModules.default;
       configuration =
-        address: tokenFile: package:
+        address: nginx: tokenFile: package:
         (nixpkgs.lib.nixosSystem {
           inherit pkgs;
           modules = [
@@ -35,7 +35,7 @@
                 cacheChatId = -1001234567890;
                 miniAppUrl = "https://skin.example.com";
                 publicBaseUrl = "https://skin.example.com";
-                nginx = {
+                nginx = lib.optionalAttrs nginx {
                   enable = true;
                   hostName = "skin.example.com";
                 };
@@ -43,16 +43,17 @@
             }
           ];
         }).config;
-      ipv4 = configuration "127.0.0.1" "/run/secrets/synthetic-skin-bot" bot;
-      ipv6 = configuration "::1" "/run/secrets/synthetic-skin-bot" bot;
-      invalid = configuration "127.0.0.1" "/nix/store/synthetic-token" bot;
-      probe = configuration "127.0.0.1" "/run/secrets/synthetic-skin-bot" (
+      proxied = configuration "127.0.0.1" true "/run/secrets/synthetic-skin-bot" bot;
+      direct = configuration "::1" false "/run/secrets/synthetic-skin-bot" bot;
+      invalid = configuration "127.0.0.1" false "/nix/store/synthetic-token" bot;
+      probe = configuration "127.0.0.1" false "/run/secrets/synthetic-skin-bot" (
         pkgs.writeShellScriptBin "minecraft-skin-bot" ''
           test "$TELEGRAM_BOT_TOKEN" = '123456:synthetic_fixture_only'
         ''
       );
       allAssertions = configuration: builtins.all (item: item.assertion) configuration.assertions;
-      service = ipv4.systemd.services.minecraft-skin-bot;
+      service = proxied.systemd.services.minecraft-skin-bot;
+      directService = direct.systemd.services.minecraft-skin-bot;
     in
     {
       checks = (
@@ -87,8 +88,8 @@
         }
         // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
           module =
-            assert allAssertions ipv4;
-            assert allAssertions ipv6;
+            assert allAssertions proxied;
+            assert allAssertions direct;
             assert !allAssertions invalid;
             assert
               service.serviceConfig.LoadCredential == [
@@ -97,15 +98,23 @@
             assert service.serviceConfig.CacheDirectory == "minecraft-skin-bot";
             assert service.serviceConfig.DynamicUser;
             assert service.environment.CACHE_DIR == "/var/cache/minecraft-skin-bot";
+            assert service.environment.API_UNIX_SOCKET == "/run/minecraft-skin-bot/api.sock";
+            assert service.environment.API_UNIX_SOCKET_GROUP == "nginx";
+            assert !(service.environment ? API_HOST);
+            assert service.serviceConfig.RuntimeDirectory == "minecraft-skin-bot";
+            assert service.serviceConfig.SupplementaryGroups == [ "nginx" ];
             assert
-              ipv4.services.nginx.virtualHosts."skin.example.com".locations."/api/".proxyPass
-              == "http://127.0.0.1:8080";
+              proxied.services.nginx.virtualHosts."skin.example.com".locations."/api/".proxyPass
+              == "http://unix:/run/minecraft-skin-bot/api.sock";
             assert
-              ipv6.services.nginx.virtualHosts."skin.example.com".locations."/api/".proxyPass
-              == "http://[::1]:8080";
+              proxied.services.nginx.virtualHosts."skin.example.com".locations."/healthz".proxyPass
+              == "http://unix:/run/minecraft-skin-bot/api.sock";
+            assert directService.environment.API_HOST == "::1";
+            assert directService.environment.API_PORT == "8080";
+            assert !(directService.serviceConfig ? RuntimeDirectory);
             pkgs.runCommand "minecraft-skin-bot-module-checks"
               {
-                unit = ipv4.systemd.units."minecraft-skin-bot.service".unit;
+                unit = proxied.systemd.units."minecraft-skin-bot.service".unit;
                 probeScript = lib.removeSuffix " " probe.systemd.services.minecraft-skin-bot.serviceConfig.ExecStart;
               }
               ''

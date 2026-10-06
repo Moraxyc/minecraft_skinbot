@@ -1,3 +1,4 @@
+import stat
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -10,6 +11,9 @@ from aiogram.methods.base import TelegramMethod, TelegramType
 from aiogram.types import Update, User
 from aiohttp import web
 from minecraft_skin_bot import app
+from minecraft_skin_bot.cache import FileCache
+from minecraft_skin_bot.service import SkinService
+from minecraft_skin_bot.web import create_web_app
 from test_service import settings
 from test_telegram import PLAYER, Provider, TelegramSession, inline_update, message
 
@@ -104,3 +108,25 @@ async def test_missing_runtime_username_fails_with_actionable_message_and_closes
     assert "BotFather" in caplog.text
     assert [call.__api_method__ for call in session.calls] == ["getMe"]
     assert session.closed
+
+
+async def test_unix_socket_listener_replaces_stale_socket_and_serves_api(tmp_path: Path) -> None:
+    runtime = settings(tmp_path)
+    socket_path = tmp_path / "run" / "api.sock"
+    socket_path.parent.mkdir()
+    socket_path.touch()
+    service = SkinService(StartupProvider(), FileCache(tmp_path / "content"), runtime)
+    runner = web.AppRunner(create_web_app(service, "runtime_skin_bot"), access_log=None)
+    await runner.setup()
+    try:
+        await app.start_listener(runner, replace(runtime, api_unix_socket=socket_path))
+        assert stat.S_ISSOCK(socket_path.stat().st_mode)
+        async with aiohttp.ClientSession(
+            connector=aiohttp.UnixConnector(str(socket_path))
+        ) as client:
+            async with client.get("http://unix/healthz") as response:
+                assert response.status == 200
+                assert await response.json() == {"status": "ok"}
+    finally:
+        await runner.cleanup()
+        await service.close()

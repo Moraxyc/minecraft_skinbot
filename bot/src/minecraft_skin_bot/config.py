@@ -32,6 +32,8 @@ class Settings:
     cache_dir: Path = Path("cache")
     api_host: str = "127.0.0.1"
     api_port: int = 8080
+    api_unix_socket: Path | None = None
+    api_unix_socket_group: str | None = None
     upload_ttl_seconds: int = 86400
     max_upload_bytes: int = 1048576
     rich_messages: bool = True
@@ -46,6 +48,8 @@ class Settings:
         cache_chat = os.environ.get("TELEGRAM_CACHE_CHAT_ID", "")
         if not cache_chat:
             raise ValueError("Set TELEGRAM_CACHE_CHAT_ID to enable all four inline media results.")
+        socket_path = os.environ.get("API_UNIX_SOCKET", "").strip()
+        socket_group = os.environ.get("API_UNIX_SOCKET_GROUP", "").strip()
         try:
             settings = cls(
                 bot_token=token,
@@ -55,6 +59,8 @@ class Settings:
                 cache_dir=Path(os.environ.get("CACHE_DIR", "cache")),
                 api_host=os.environ.get("API_HOST", "127.0.0.1"),
                 api_port=int(os.environ.get("API_PORT", "8080")),
+                api_unix_socket=Path(socket_path) if socket_path else None,
+                api_unix_socket_group=socket_group or None,
                 upload_ttl_seconds=int(os.environ.get("UPLOAD_TTL_SECONDS", "86400")),
                 rich_messages=os.environ.get("TELEGRAM_RICH_MESSAGES", "true").lower()
                 in {"true", "1", "yes"},
@@ -63,4 +69,6 @@ class Settings:
             raise ValueError("Cache chat, port and upload TTL must be valid integers.") from exc
         if not 1 <= settings.api_port <= 65535 or settings.upload_ttl_seconds < 60:
             raise ValueError("Use a valid API port and an upload TTL of at least 60 seconds.")
+        if settings.api_unix_socket is not None and not settings.api_unix_socket.is_absolute():
+            raise ValueError("Set API_UNIX_SOCKET to an absolute socket path.")
         return settings

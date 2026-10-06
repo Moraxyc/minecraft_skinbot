@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import shutil
 
 import aiohttp
 from aiogram import Bot, Dispatcher
@@ -39,6 +40,22 @@ def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 
+async def start_listener(runner: web.AppRunner, settings: Settings) -> None:
+    """Bind the public API, using a unix socket when the deployment provides one."""
+    if settings.api_unix_socket is None:
+        await web.TCPSite(runner, settings.api_host, settings.api_port).start()
+        return
+    socket_path = settings.api_unix_socket
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    socket_path.unlink(missing_ok=True)
+    await web.UnixSite(runner, socket_path).start()
+    if settings.api_unix_socket_group is None:
+        return
+    # The reverse proxy runs as another user, so the socket has to be group-accessible.
+    shutil.chown(socket_path, group=settings.api_unix_socket_group)
+    socket_path.chmod(0o660)
+
+
 async def run(settings: Settings) -> None:
     timeout = aiohttp.ClientTimeout(total=10, connect=3, sock_read=5)
     async with aiohttp.ClientSession(
@@ -73,7 +90,7 @@ async def run(settings: Settings) -> None:
                 raise ValueError(error)
             runner = web.AppRunner(create_web_app(service, me.username), access_log=None)
             await runner.setup()
-            await web.TCPSite(runner, settings.api_host, settings.api_port).start()
+            await start_listener(runner, settings)
             await bot.set_my_commands(
                 [
                     BotCommand(command="start", description="Search and share Minecraft skins"),
