@@ -1,4 +1,7 @@
 import asyncio
+import logging
+import os
+import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -53,7 +56,12 @@ from minecraft_skin_bot.telegram.formatting import (
     parse_action,
     preview_markup,
 )
-from minecraft_skin_bot.telegram.inline import InlineSkins, SkinQuery, parse_query
+from minecraft_skin_bot.telegram.inline import (
+    FILE_ID_TTL_SECONDS,
+    InlineSkins,
+    SkinQuery,
+    parse_query,
+)
 from minecraft_skin_bot.telegram.router import SkinMessages
 from PIL import Image
 
@@ -365,18 +373,82 @@ async def test_other_rich_errors_propagate_without_duplicate_send(
     assert [call.__api_method__ for call in harness.session.calls] == ["sendRichMessage"]
 
 
-async def test_invalid_cached_file_id_reuploads_once(harness: Harness) -> None:
-    harness.session.inline_error = "Bad Request: wrong file identifier/HTTP URL specified"
+@pytest.mark.parametrize(
+    "inline_error",
+    [
+        "Bad Request: wrong file identifier/HTTP URL specified",
+        "Bad Request: wrong remote file identifier specified: Wrong padding in the string",
+        "Bad Request: wrong remote file id specified: Wrong character in the string",
+        "Bad Request: wrong remote file id specified: can't unserialize it. Wrong last symbol",
+        "Bad Request: file reference expired, it must be refreshed",
+    ],
+)
+async def test_rejected_cached_file_id_reuploads_once(harness: Harness, inline_error: str) -> None:
+    """Telegram varies the tail of this 400, and every wording must refresh the media."""
+    harness.session.inline_error = inline_error
     await harness.dispatcher().feed_update(harness.bot, inline_update("Notch"))
     assert len([call for call in harness.session.calls if call.__api_method__ == "sendPhoto"]) == 6
     assert (
         len([call for call in harness.session.calls if call.__api_method__ == "sendDocument"]) == 2
     )
-    assert len([call for call in harness.session.calls if isinstance(call, AnswerInlineQuery)]) == 2
+    answers = [call for call in harness.session.calls if isinstance(call, AnswerInlineQuery)]
+    assert len(answers) == 2
+    assert len(answers[-1].results) == 4
 
 
-async def test_unrelated_inline_failure_preserves_upload_cache(harness: Harness) -> None:
-    harness.session.inline_error = "Bad Request: query is too old"
+async def test_expired_inline_query_stops_without_reporting_a_failure(
+    harness: Harness, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A query that expired before the answer cannot be recovered, and is not a service failure."""
+    harness.session.inline_error = (
+        "Bad Request: query is too old and response timeout expired or query ID is invalid"
+    )
+    with caplog.at_level(logging.DEBUG, logger="minecraft_skin_bot.telegram.router"):
+        await harness.dispatcher().feed_update(harness.bot, inline_update("Notch"))
+    assert (
+        len(
+            [
+                call
+                for call in harness.session.calls
+                if call.__api_method__ in {"sendPhoto", "sendDocument"}
+            ]
+        )
+        == 4
+    )
+    assert len([call for call in harness.session.calls if isinstance(call, AnswerInlineQuery)]) == 1
+    assert [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and record.name == "minecraft_skin_bot.telegram.router"
+    ] == []
+
+
+async def test_repeatedly_rejected_inline_media_degrades_instead_of_failing(
+    harness: Harness,
+) -> None:
+    """Rejected fresh uploads mean the media is not at fault, so the user still gets text."""
+    harness.session.inline_error = (
+        "Bad Request: wrong remote file identifier specified: Wrong padding in the string"
+    )
+    harness.session.inline_error_count = 2
+    await harness.dispatcher().feed_update(harness.bot, inline_update("Notch"))
+    assert (
+        len(
+            [
+                call
+                for call in harness.session.calls
+                if call.__api_method__ in {"sendPhoto", "sendDocument"}
+            ]
+        )
+        == 8
+    )
+    answers = [call for call in harness.session.calls if isinstance(call, AnswerInlineQuery)]
+    assert len(answers) == 3
+    assert answers[-1].results[0].id == "media-error"
+
+
+async def test_unrelated_inline_failure_reports_service_busy(harness: Harness) -> None:
+    harness.session.inline_error = "Bad Request: reply markup is too long"
     await harness.dispatcher().feed_update(harness.bot, inline_update("Notch"))
     assert (
         len(
@@ -391,6 +463,18 @@ async def test_unrelated_inline_failure_preserves_upload_cache(harness: Harness)
     recovered = harness.session.calls[-1]
     assert isinstance(recovered, AnswerInlineQuery)
     assert recovered.results[0].id == "service-busy"
+
+
+async def test_cached_file_ids_expire_so_stale_media_self_heals(harness: Harness) -> None:
+    inline = InlineSkins(harness.service, harness.settings, "minecraft_skin_bot")
+    asset = await harness.service.resolve("Notch")
+    first = await inline.file_id(harness.bot, asset, "front")
+    expired = time.time() - FILE_ID_TTL_SECONDS - 60
+    for path in harness.service.cache.directory.iterdir():
+        os.utime(path, (expired, expired))
+    second = await inline.file_id(harness.bot, asset, "front")
+    assert second != first
+    assert len([call for call in harness.session.calls if call.__api_method__ == "sendPhoto"]) == 2
 
 
 @pytest.mark.parametrize(

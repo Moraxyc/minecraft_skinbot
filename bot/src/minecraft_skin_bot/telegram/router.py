@@ -36,9 +36,57 @@ from minecraft_skin_bot.telegram.inline import InlineSkins, parse_query
 
 logger = logging.getLogger(__name__)
 
+# Telegram varies the tail of these 400 descriptions, for example
+# "wrong remote file identifier specified: Wrong padding in the string", so match prefixes.
+FILE_ID_ERROR_PREFIXES = (
+    "wrong file identifier",
+    "wrong remote file identifier",
+    "wrong remote file id",
+    "file reference expired",
+)
+FILE_ID_DETAIL_HINTS = ("padding in the string", "wrong last symbol", "can't unserialize")
+STALE_QUERY_MARKERS = ("query is too old", "query id is invalid", "response timeout expired")
+
+MEDIA_ERROR = UtilityError("Skins unavailable", "Send the player name again in a moment.")
+
 
 def error_text(error: UtilityError) -> str:
     return f"<b>{escape(error.title)}</b>\n\n{escape(error.message)}"
+
+
+def description(error: TelegramAPIError) -> str:
+    """Telegram description without the transport's "Bad Request: " label."""
+    return error.message.lower().removeprefix("bad request: ").strip()
+
+
+def brief(error: BaseException) -> str:
+    """Short failure detail for logs; the safe-log filter strips credentials and transport URLs."""
+    return description(error)[:200] if isinstance(error, TelegramAPIError) else type(error).__name__
+
+
+def invalid_file_id(error: TelegramAPIError) -> bool:
+    """A cached file_id that this bot can no longer reuse, which a fresh upload repairs."""
+    text = description(error)
+    if text.startswith(FILE_ID_ERROR_PREFIXES):
+        return True
+    return "file" in text and any(hint in text for hint in FILE_ID_DETAIL_HINTS)
+
+
+def stale_query(error: TelegramAPIError) -> bool:
+    """The update's query expired before the bot answered, so no answer can reach the user."""
+    text = description(error)
+    return any(marker in text for marker in STALE_QUERY_MARKERS)
+
+
+def failure_article(identifier: str, error: UtilityError) -> InlineQueryResultArticle:
+    return InlineQueryResultArticle(
+        id=identifier,
+        title=error.title,
+        description=error.message,
+        input_message_content=InputTextMessageContent(
+            message_text=error_text(error), parse_mode="HTML"
+        ),
+    )
 
 
 def input_media(
@@ -253,53 +301,64 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
             return
         try:
             results, button = await inline.results(bot, parsed)
-            try:
-                await query.answer(results, button=button, cache_time=60, is_personal=False)
-            except TelegramBadRequest as error:
-                if error.message.lower().removeprefix("bad request: ") not in {
-                    "wrong file identifier/http url specified",
-                    "wrong remote file identifier specified",
-                    "file reference expired",
-                }:
-                    raise
-                await inline.invalidate(bot, parsed.reference)
-                results, button = await inline.results(bot, parsed)
-                await query.answer(results, button=button, cache_time=60, is_personal=False)
         except UtilityError as error:
             await query.answer(
-                [
-                    InlineQueryResultArticle(
-                        id="lookup-error",
-                        title=error.title,
-                        description=error.message,
-                        input_message_content=InputTextMessageContent(
-                            message_text=error_text(error), parse_mode="HTML"
-                        ),
-                    )
-                ],
-                cache_time=5,
-                is_personal=False,
+                [failure_article("lookup-error", error)], cache_time=5, is_personal=False
+            )
+            return
+        try:
+            await query.answer(results, button=button, cache_time=60, is_personal=False)
+            return
+        except TelegramBadRequest as error:
+            if stale_query(error):
+                logger.debug("Inline query expired before it was answered")
+                return
+            if not invalid_file_id(error):
+                raise
+            logger.warning(
+                "Inline media rejected, refreshing the cached uploads (%s)", brief(error)
+            )
+        try:
+            await inline.invalidate(bot, parsed.reference)
+            results, button = await inline.results(bot, parsed)
+            await query.answer(results, button=button, cache_time=60, is_personal=False)
+        except TelegramBadRequest as error:
+            if stale_query(error):
+                logger.debug("Inline query expired before it was answered")
+                return
+            if not invalid_file_id(error):
+                raise
+            # Fresh uploads were rejected too, so the media is not the problem; degrade instead.
+            logger.warning("Inline media rejected after refreshing (%s)", brief(error))
+            await query.answer(
+                [failure_article("media-error", MEDIA_ERROR)], cache_time=5, is_personal=False
+            )
+        except UtilityError as error:
+            await query.answer(
+                [failure_article("lookup-error", error)], cache_time=5, is_personal=False
             )
 
     @router.errors()
     async def recover_request(event: ErrorEvent, bot: Bot) -> bool:
         if not isinstance(event.exception, (TelegramAPIError, TimeoutError)):
             return False
-        logger.warning("Telegram request failed (%s)", type(event.exception).__name__)
+        if isinstance(event.exception, TelegramAPIError) and stale_query(event.exception):
+            logger.debug("Telegram query expired before it was answered")
+            return True
+        if isinstance(event.exception, TelegramAPIError):
+            logger.warning(
+                "Telegram request failed (%s, %s: %s)",
+                event.exception.method.__api_method__,
+                type(event.exception).__name__,
+                brief(event.exception),
+            )
+        else:
+            logger.warning("Telegram request failed (%s)", type(event.exception).__name__)
         error = UtilityError("Skin service is busy", "Try again in a moment.")
         try:
             if event.update.inline_query:
                 await event.update.inline_query.answer(
-                    [
-                        InlineQueryResultArticle(
-                            id="service-busy",
-                            title=error.title,
-                            description=error.message,
-                            input_message_content=InputTextMessageContent(
-                                message_text=error_text(error), parse_mode="HTML"
-                            ),
-                        )
-                    ],
+                    [failure_article("service-busy", error)],
                     cache_time=1,
                     is_personal=False,
                 )

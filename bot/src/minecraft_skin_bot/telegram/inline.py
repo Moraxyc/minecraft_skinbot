@@ -21,6 +21,10 @@ from minecraft_skin_bot.telegram.formatting import caption, share_markup
 
 InlineResult = InlineQueryResultUnion
 
+# Telegram can stop accepting a file_id this bot uploaded, so refresh them well before the
+# content cache expires and let a lost or rotated media reference repair itself.
+FILE_ID_TTL_SECONDS = 86400
+
 
 @dataclass(frozen=True, slots=True)
 class SkinQuery:
@@ -84,7 +88,9 @@ class InlineSkins:
             return identifier.encode()
 
         key = self.media_key(bot, asset, kind)
-        return (await self.service.cache.get_or_create(key, upload)).decode()
+        return (
+            await self.service.cache.get_or_create(key, upload, ttl=FILE_ID_TTL_SECONDS)
+        ).decode()
 
     async def results(
         self, bot: Bot, query: SkinQuery
