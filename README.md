@@ -49,13 +49,13 @@ HTTP viewer/API URLs are supported on localhost for development.
 
 ## Run the viewer
 
-Node.js 24 and the pinned pnpm version in `web/package.json` are supported.
+Node.js 24 (24.20+) and npm 11.19.0 are supported. `web/package-lock.json` pins the dependency tree.
 
 ```sh
 cd web
-pnpm install --frozen-lockfile
-pnpm dev
-pnpm build
+npm ci
+npm run dev
+npm run build
 ```
 
 Serve `web/dist` from any static host. Build with `VITE_BOT_USERNAME=your_bot` to enable Telegram links and external-browser sharing. A viewer URL accepts `?uuid=<32-character UUID>` or `?upload=<SHA-256>`. Main Mini App deep links also carry the same selector through `startapp`.
@@ -63,7 +63,7 @@ Serve `web/dist` from any static host. Build with `VITE_BOT_USERNAME=your_bot` t
 For a separate API host, build with:
 
 ```sh
-VITE_BOT_USERNAME=your_bot VITE_API_BASE_URL=https://api.example.com pnpm build
+VITE_BOT_USERNAME=your_bot VITE_API_BASE_URL=https://api.example.com npm run build
 ```
 
 The API permits the viewer's configured origin through CORS. The public viewer loads content by UUID or hash. Telegram authentication is unnecessary for this public content.
@@ -117,11 +117,12 @@ uv run ruff format --check .
 uv run mypy
 uv run pytest
 cd web
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
-pnpm test:e2e
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run test:e2e
 ```
 
 Backend tests cover provider failures, texture URL validation, content changes, concurrent cache work, cache deletion, uploaded PNG validation, UV mappings, golden previews and inline result types. Viewer tests cover public content loading, mobile controls, theme, resize and sharing. Telegram client availability, BotFather settings and cache channel permissions are verified in the deployed account.

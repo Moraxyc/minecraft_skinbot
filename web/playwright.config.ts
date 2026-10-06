@@ -18,7 +18,7 @@ export default defineConfig({
     },
   },
   webServer: {
-    command: 'pnpm dev --port 4173',
+    command: 'npm run dev -- --port 4173',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
     env: { VITE_BOT_USERNAME: 'minecraft_skin_bot' },

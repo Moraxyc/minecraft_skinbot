@@ -2,7 +2,6 @@
 .env
 .env.*
 .venv
-.pnpm-store
 cache
 web/node_modules
 web/dist
