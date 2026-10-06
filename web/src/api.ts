@@ -8,6 +8,7 @@ export interface SkinProfile {
   skin_url: string;
   cape_url: string | null;
   reference: string;
+  bot_username: string;
 }
 
 const uuidPattern = /^[a-f0-9]{32}$/i;
@@ -79,6 +80,7 @@ export async function loadProfile(reference: SkinReference, apiBase: string): Pr
   if (typeof value !== 'object' || value === null) throw new ViewerError('Reopen the skin to load its data.');
   const data = value as Record<string, unknown>;
   if (typeof data.name !== 'string' || !['classic', 'slim', 'unknown'].includes(String(data.model))
+    || typeof data.bot_username !== 'string' || !/^[a-z0-9_]{5,32}$/i.test(data.bot_username)
     || data.reference !== inlineReference(reference)
     || (reference.kind === 'profile' ? data.uuid !== reference.id : data.uuid !== null)) {
     throw new ViewerError('Reopen the skin to load its data.');
@@ -90,5 +92,6 @@ export async function loadProfile(reference: SkinReference, apiBase: string): Pr
     skin_url: assetURL(data.skin_url, 'skin', base),
     cape_url: data.cape_url === null ? null : assetURL(data.cape_url, 'cape', base),
     reference: data.reference,
+    bot_username: data.bot_username,
   };
 }

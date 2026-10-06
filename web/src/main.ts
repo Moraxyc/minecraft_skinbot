@@ -14,11 +14,11 @@ const cleanupTelegram = initializeTelegram(app);
 const reference = parseReference(window.location.search, app?.initDataUnsafe?.start_param);
 const status = element('status');
 const controls = element<HTMLFieldSetElement>('controls');
-const botUsername = import.meta.env.VITE_BOT_USERNAME || '';
+let botUsername = '';
 let viewer: Viewer | undefined;
 
 function share(kind: 'skin' | 'view'): void {
-  if (!reference) return;
+  if (!reference || !botUsername) return;
   const query = `${kind} ${inlineReference(reference)}`;
   const outcome = shareInline(app, query);
   const fallback = element<HTMLAnchorElement>('share-fallback');
@@ -44,6 +44,7 @@ async function start(): Promise<void> {
   status.textContent = 'Loading skin…';
   try {
     const profile = await loadProfile(reference, import.meta.env.VITE_API_BASE_URL || window.location.origin);
+    botUsername = profile.bot_username;
     element('name').textContent = profile.name;
     const model = profile.model.charAt(0).toUpperCase() + profile.model.slice(1);
     element('details').textContent = `Model: ${model}${profile.cape_url ? ' · Cape' : ''}`;

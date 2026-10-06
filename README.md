@@ -58,12 +58,12 @@ npm run dev
 npm run build
 ```
 
-Serve `web/dist` from any static host. Build with `VITE_BOT_USERNAME=your_bot` to enable Telegram links and external-browser sharing. A viewer URL accepts `?uuid=<32-character UUID>` or `?upload=<SHA-256>`. Main Mini App deep links also carry the same selector through `startapp`.
+Serve `web/dist` from any static host. The API supplies the bot username resolved at startup through Telegram `getMe`; the viewer uses it for Telegram links and external-browser sharing. A viewer URL accepts `?uuid=<32-character UUID>` or `?upload=<SHA-256>`. Main Mini App deep links also carry the same selector through `startapp`.
 
 For a separate API host, build with:
 
 ```sh
-VITE_BOT_USERNAME=your_bot VITE_API_BASE_URL=https://api.example.com npm run build
+VITE_API_BASE_URL=https://api.example.com npm run build
 ```
 
 The API permits the viewer's configured origin through CORS. The public viewer loads content by UUID or hash. Telegram authentication is unnecessary for this public content.

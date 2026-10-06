@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 const uuid = '069a79f444e94726a5befca90e38aaf5';
 const hash = 'a'.repeat(64);
+const botUsername = 'resolved_skin_bot';
 
 async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown' = 'classic', legacy = false): Promise<void> {
   const png = await readFile(new URL(`./fixtures/${legacy ? 'legacy' : 'modern'}.png`, import.meta.url));
@@ -37,6 +38,7 @@ async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown'
         reference: upload ? `upload:${hash}` : uuid,
         skin_url: `${url.origin}/api/skin/${hash}.png`,
         cape_url: null,
+        bot_username: botUsername,
       },
     });
   });
@@ -92,8 +94,8 @@ test('mobile WebGL viewer loads, rotates, zooms, resizes, themes, and shares bot
     (window as unknown as { Telegram: { WebApp: { switchInlineQuery(): void } } }).Telegram.WebApp.switchInlineQuery = () => { throw new Error('WebAppInlineModeDisabled'); };
   });
   await page.getByRole('button', { name: 'Share Three-view' }).click();
-  await expect(page.getByLabel('Inline query', { exact: true })).toHaveValue(`@minecraft_skin_bot view upload:${hash}`);
-  await expect(page.getByRole('link', { name: 'Open Telegram' })).toHaveAttribute('href', 'https://t.me/minecraft_skin_bot');
+  await expect(page.getByLabel('Inline query', { exact: true })).toHaveValue(`@${botUsername} view upload:${hash}`);
+  await expect(page.getByRole('link', { name: 'Open Telegram' })).toHaveAttribute('href', `https://t.me/${botUsername}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
@@ -110,9 +112,9 @@ test('real renderer respects explicit slim metadata, layers, reset, legacy conve
     stage.append(canvas);
     document.body.append(stage);
     const viewer = new Viewer(canvas, stage, () => {});
-    await viewer.load({ uuid, name: 'Skin', model: 'classic', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: null });
+    await viewer.load({ uuid, name: 'Skin', model: 'classic', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: null, bot_username: 'resolved_skin_bot' });
     const classicModel = viewer.skin.playerObject.skin.modelType;
-    await viewer.load({ uuid, name: 'Skin', model: 'slim', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: `${location.origin}/api/cape/${hash}.png` });
+    await viewer.load({ uuid, name: 'Skin', model: 'slim', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: `${location.origin}/api/cape/${hash}.png`, bot_username: 'resolved_skin_bot' });
     const model = viewer.skin.playerObject.skin.modelType;
     const capeVisible = viewer.skin.playerObject.cape.visible;
     viewer.setLayer('outer', false);
@@ -172,15 +174,15 @@ test('plain browser shares a selectable query and opens the documented bot link'
   await expect(page.getByRole('button', { name: 'Share Three-view' })).toBeEnabled();
   await page.getByRole('button', { name: 'Share Three-view' }).click();
   const input = page.getByLabel('Inline query', { exact: true });
-  await expect(input).toHaveValue(`@minecraft_skin_bot view upload:${hash}`);
+  await expect(input).toHaveValue(`@${botUsername} view upload:${hash}`);
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() { return Promise.reject(new Error('Permission denied')); } } }));
   await page.getByRole('button', { name: 'Copy inline query' }).click();
   await expect(page.locator('#share-status')).toHaveText('Select and copy the query, then paste it into your target Telegram chat.');
-  expect(await input.evaluate((element) => (element as HTMLTextAreaElement).selectionEnd)).toBe(`@minecraft_skin_bot view upload:${hash}`.length);
+  expect(await input.evaluate((element) => (element as HTMLTextAreaElement).selectionEnd)).toBe(`@${botUsername} view upload:${hash}`.length);
   await page.setViewportSize({ width: 320, height: 568 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.route('https://t.me/minecraft_skin_bot', (route) => route.fulfill({ body: 'Telegram bot handoff', contentType: 'text/plain' }));
+  await page.route(`https://t.me/${botUsername}`, (route) => route.fulfill({ body: 'Telegram bot handoff', contentType: 'text/plain' }));
   await page.getByRole('link', { name: 'Open Telegram' }).click();
-  await page.waitForURL('https://t.me/minecraft_skin_bot');
-  expect(page.url()).toBe('https://t.me/minecraft_skin_bot');
+  await page.waitForURL(`https://t.me/${botUsername}`);
+  expect(page.url()).toBe(`https://t.me/${botUsername}`);
 });
