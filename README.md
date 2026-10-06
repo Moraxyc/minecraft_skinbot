@@ -45,6 +45,8 @@ Supply environment variables through your process manager or shell. `.env.exampl
 | `API_PORT` | API bind port; default `8080` |
 | `API_UNIX_SOCKET` | Absolute unix socket path; replaces the TCP listener when set |
 | `API_UNIX_SOCKET_GROUP` | Group granted access to that unix socket |
+| `TELEGRAM_WEBHOOK_URL` | Optional public HTTPS update endpoint; unset uses polling |
+| `TELEGRAM_WEBHOOK_SECRET` | Optional webhook secret; generated at startup when unset |
 | `UPLOAD_TTL_SECONDS` | Upload availability; default `86400`, minimum `60` |
 | `TELEGRAM_RICH_MESSAGES` | Rich Message enhancement; default `true`; use `false` for classic photo messages |
 
@@ -89,7 +91,7 @@ Commit the compiled `messages.mo` with its `.po` source. Wheels and Nix packages
 
 `Telegram → SkinService → Minecraft provider → PNG parser / static renderer → content cache`
 
-The same Python process runs polling and a thin aiohttp API. The browser uses `skinview3d` with its compatible Three.js version. The Bot generates PNG previews; the browser handles 3D rendering and interaction.
+The same Python process receives updates through polling or an optional webhook and runs a thin aiohttp API. The browser uses `skinview3d` with its compatible Three.js version. The Bot generates PNG previews; the browser handles 3D rendering and interaction.
 
 Content caches contain immutable textures, generated previews and Telegram media IDs. Their keys include the texture SHA-256, model, render type and renderer version. Concurrent requests share downloads, rendering and Telegram uploads. Profile lookups expire after 60 seconds so skin changes receive fresh texture references.
 
@@ -126,7 +128,7 @@ docker build -t minecraft-skin-bot .
 docker run --env-file .env -e API_HOST=0.0.0.0 -p 127.0.0.1:8080:8080 minecraft-skin-bot
 ```
 
-The container runs as an unprivileged user. `/app/cache` can use a writable volume. Polling supports one active bot process; horizontally scaled polling requires a separate delivery design.
+The container runs as an unprivileged user. `/app/cache` can use a writable volume. Polling supports one active bot process; horizontally scaled polling requires a separate delivery design. With `TELEGRAM_WEBHOOK_URL`, proxy that URL's path to the same listener. The application registers the webhook and its generated secret at startup; `TELEGRAM_WEBHOOK_SECRET` supplies an explicit secret when needed.
 
 ## Nix packaging and NixOS deployment
 
@@ -165,7 +167,7 @@ Import `nixosModules.default` from this flake into your NixOS configuration:
 
 Supply `tokenFile` as a quoted runtime path managed by your secret manager. systemd loads that file as a credential and the startup wrapper supplies `TELEGRAM_BOT_TOKEN` inside the bot process. The service uses a dynamic user and disposable content storage at `/var/cache/minecraft-skin-bot`.
 
-The optional nginx integration builds the viewer with `publicBaseUrl`, serves static assets and proxies `/api/` and `/healthz`. With `nginx.enable = true` the bot drops the TCP listener: the module creates a systemd socket unit at `/run/minecraft-skin-bot/api.sock` (mode `0660`, group `services.nginx.group`) and passes its descriptor to the bot, which accepts it through systemd socket activation instead of creating the socket itself. nginx proxies that socket directly, and a service restart no longer interrupts the listener. The Bot API supplies the bot username at startup. Configure HTTPS certificates on that nginx virtual host using your existing certificate or ACME setup. `apiHost` and `apiPort` only configure the direct listener used when the nginx integration is off; `uploadTtlSeconds`, `richMessages`, `package` and `webPackage` provide deployment overrides.
+The optional nginx integration builds the viewer with `publicBaseUrl`, serves static assets and proxies `/api/` and `/healthz`. With `nginx.enable = true` the bot drops the TCP listener: the module creates a systemd socket unit at `/run/minecraft-skin-bot/api.sock` (mode `0660`, group `services.nginx.group`) and passes its descriptor to the bot, which accepts it through systemd socket activation instead of creating the socket itself. nginx proxies that socket directly, and a service restart no longer interrupts the listener. The Bot API supplies the bot username at startup. Configure HTTPS certificates on that nginx virtual host using your existing certificate or ACME setup. `webhookUrl` selects webhook delivery and adds its path to the nginx proxy; unset uses polling. `apiHost` and `apiPort` only configure the direct listener used when the nginx integration is off; `uploadTtlSeconds`, `richMessages`, `package` and `webPackage` provide deployment overrides.
 
 ## Verification
 
