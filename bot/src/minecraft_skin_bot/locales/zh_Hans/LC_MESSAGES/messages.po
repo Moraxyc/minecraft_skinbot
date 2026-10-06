@@ -117,17 +117,11 @@ msgstr "此玩家没有公开的皮肤纹理。"
 msgid "Minecraft returned an unsupported skin texture."
 msgstr "Minecraft 返回的皮肤格式暂不支持。"
 
-msgid "Open the profile or upload the PNG again."
-msgstr "请重新打开玩家皮肤或上传 PNG。"
-
 msgid "Cape unavailable"
 msgstr "披风暂不可用"
 
 msgid "Minecraft returned an unsupported cape texture."
 msgstr "Minecraft 返回的披风格式暂不支持。"
-
-msgid "Open the profile again."
-msgstr "请重新打开玩家皮肤。"
 
 msgid "Invalid player"
 msgstr "玩家信息无效"
