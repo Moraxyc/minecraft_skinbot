@@ -17,10 +17,10 @@ Resolve, preview and share Minecraft skins in Telegram. The mobile Mini App prov
 1. Create a bot with [@BotFather](https://t.me/BotFather) using `/newbot`. Supply its token through `TELEGRAM_BOT_TOKEN`.
 2. Enable Inline Mode with `/setinline`. Set the placeholder to `Minecraft username or UUID`.
 3. Open `/mybots` → your bot → Bot Settings → Configure Mini App → Enable Mini App. Set the HTTPS viewer URL as the Main Mini App URL. Keep launch URLs on that configured origin. `/setmenubutton` can also expose the viewer in private chats.
-4. Create a private cache channel, add the bot as an administrator with **Post Messages**, and set its numeric chat ID in `TELEGRAM_CACHE_CHAT_ID` (usually beginning with `-100`). The bot uploads technical media there to obtain reusable Telegram `file_id` values. This configuration enables all four inline results, including the original PNG document.
+4. Create a private cache channel, add the bot as an administrator with **Post Messages**, and set the complete signed numeric chat ID returned by Telegram in `TELEGRAM_CACHE_CHAT_ID` (usually beginning with `-100`). A private chat can also serve as the cache after its user sends `/start` to the bot. The bot uploads technical media there to obtain reusable Telegram `file_id` values. This configuration enables all four inline results, including the original PNG document.
 5. Host the viewer and public API over HTTPS. Set `MINI_APP_URL` to the viewer and `PUBLIC_BASE_URL` to the public API origin, including any reverse proxy prefix. Build the viewer with `VITE_API_BASE_URL` when the API uses a separate origin.
 
-Startup registers `/start` and `/help`. Query a player with `Notch` or `069a79f444e94726a5befca90e38aaf5`. Use `@your_bot Notch` in any chat to share a result. The inline results button opens the interactive viewer for that player.
+Startup checks access to the media cache chat, then registers `/start` and `/help`. In private chats, query a player with `Notch` or `069a79f444e94726a5befca90e38aaf5`. In groups and channels, mention the bot in your message or skin file caption. Use `@your_bot Notch` in any chat to share a result. The inline results button opens the interactive viewer for that player.
 
 ## Run the bot
 
