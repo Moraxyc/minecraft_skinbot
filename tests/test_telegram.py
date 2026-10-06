@@ -37,6 +37,7 @@ from aiogram.types import (
     InputRichBlockDocument,
     InputRichBlockParagraph,
     InputRichBlockPhoto,
+    InputRichBlockUnion,
     InputRichMessageContent,
     Message,
     MessageEntity,
@@ -249,6 +250,15 @@ def callback_update(data: str, *, rich_card: bool = False) -> Update:
     )
 
 
+def copy_button_paragraph(blocks: list[InputRichBlockUnion]) -> InputRichBlockParagraph:
+    """The UUID paragraph of a rich card: rich text ending in its embedded copy button."""
+    for block in blocks:
+        if isinstance(block, InputRichBlockParagraph) and isinstance(block.text, list):
+            if isinstance(block.text[-1], RichTextButton):
+                return block
+    raise AssertionError("rich card has no UUID copy paragraph")
+
+
 def chat_update(chat_type: str, **data: Any) -> Update:
     incoming = Message(
         message_id=4,
@@ -316,8 +326,8 @@ async def test_own_mentions_resolve_queries_with_utf16_entities(
         for block in output.rich_message.blocks or []
         if isinstance(block, InputRichBlockButtons)
     ][-1].buttons
-    assert buttons[0].url == f"https://t.me/minecraft_skin_bot?startapp={PLAYER.hex}"
-    assert buttons[0].web_app is None
+    assert buttons[1].url == f"https://t.me/minecraft_skin_bot?startapp={PLAYER.hex}"
+    assert buttons[1].web_app is None
     assert "channel_post" in dispatcher.resolve_used_update_types()
 
 
@@ -420,14 +430,10 @@ async def test_plain_name_and_uuid_send_complete_rich_skin(
     blocks = output.rich_message.blocks or []
     assert any(isinstance(block, InputRichBlockPhoto) for block in blocks)
     rows = [block for block in blocks if isinstance(block, InputRichBlockButtons)]
-    assert [button.text for button in rows[-1].buttons] == ["Open 3D", "Share"]
-    assert rows[-1].buttons[0].web_app is not None
-    assert rows[-1].buttons[1].switch_inline_query == PLAYER.hex
-    uuid_line = next(
-        block
-        for block in blocks
-        if isinstance(block, InputRichBlockParagraph) and isinstance(block.text, list)
-    )
+    assert [button.text for button in rows[-1].buttons] == ["Original", "Open 3D", "Share"]
+    assert rows[-1].buttons[1].web_app is not None
+    assert rows[-1].buttons[2].switch_inline_query == PLAYER.hex
+    uuid_line = copy_button_paragraph(blocks)
     assert isinstance(uuid_line.text, list)
     copy = uuid_line.text[-1]
     assert uuid_line.text[0] == "UUID: " and isinstance(copy, RichTextButton)
@@ -510,7 +516,7 @@ async def test_inline_open_3d_is_a_mini_app_only_in_the_senders_private_chat(
         for block in content.rich_message.blocks or []
         if isinstance(block, InputRichBlockButtons)
     ]
-    assert (rows[-1].buttons[0].web_app is not None) is private
+    assert (rows[-1].buttons[1].web_app is not None) is private
 
 
 async def test_concurrent_inline_uploads_are_deduplicated_and_cache_deletion_recovers(
@@ -722,7 +728,7 @@ async def test_uploaded_png_actions_remain_self_contained(
     output = harness.session.calls[-1]
     assert isinstance(output, SendPhoto)
     assert output.reply_markup and hasattr(output.reply_markup, "inline_keyboard")
-    first_action = output.reply_markup.inline_keyboard[0][0].callback_data
+    first_action = output.reply_markup.inline_keyboard[1][0].callback_data
     assert first_action and len(first_action.encode()) <= 64
     reference, kind, _ = parse_action(first_action)
     asset = await harness.service.resolve(reference)
@@ -765,10 +771,10 @@ async def test_standard_photo_prefix_preserves_all_skin_actions(harness: Harness
     assert isinstance(output, SendPhoto) and isinstance(output.reply_markup, InlineKeyboardMarkup)
     buttons = [button for row in output.reply_markup.inline_keyboard for button in row]
     assert [button.text for button in buttons] == [
-        "Head",
         "Front",
         "Back",
         "Side",
+        "Head",
         "Three-view",
         "Original",
         "Open 3D",
@@ -855,7 +861,7 @@ async def test_group_preview_uses_main_app_link(harness: Harness) -> None:
     asset = await harness.service.resolve("Notch")
     markup = preview_markup(asset, harness.service, "minecraft_skin_bot", private=False)
     assert (
-        markup.inline_keyboard[-1][0].url
+        markup.inline_keyboard[-1][1].url
         == f"https://t.me/minecraft_skin_bot?startapp={PLAYER.hex}"
     )
     alternative = replace(harness.settings, rich_messages=False)
@@ -877,7 +883,7 @@ async def test_preview_action_rewrites_the_message_in_place(harness: Harness) ->
     assert isinstance(edited.media, InputMediaPhoto) and edited.media.parse_mode == "HTML"
     assert isinstance(edited.reply_markup, InlineKeyboardMarkup)
     buttons = [button.text for row in edited.reply_markup.inline_keyboard for button in row]
-    assert buttons[:6] == ["Head", "Front", "Back", "Side", "Three-view", "Original"]
+    assert buttons[:6] == ["Front", "Back", "Side", "Head", "Three-view", "Original"]
 
     harness.session.calls.clear()
     await harness.dispatcher().feed_update(
@@ -901,21 +907,20 @@ async def test_rich_card_keeps_its_layout_when_an_action_is_pressed(harness: Har
     assert any(isinstance(block, InputRichBlockPhoto) for block in blocks)
     rows = [block for block in blocks if isinstance(block, InputRichBlockButtons)]
     labels = [button.text for row in rows for button in row.buttons]
-    assert labels[:6] == [
-        "Head",
+    assert labels == [
         "Front",
         "Back",
         "Side",
+        "Head",
         "Three-view",
         "Original",
+        "Open 3D",
+        "Share",
     ]
-    assert labels[6:] == ["Open 3D", "Share"]
     assert all(row.align == "center" for row in rows)
-    uuid_line = next(
-        block
-        for block in blocks
-        if isinstance(block, InputRichBlockParagraph) and isinstance(block.text, list)
-    )
+    assert rows[1].buttons[0].style == "primary"
+    assert rows[-1].buttons[1].style == "success"
+    uuid_line = copy_button_paragraph(blocks)
     assert isinstance(uuid_line.text, list)
     copy = uuid_line.text[-1]
     assert isinstance(copy, RichTextButton) and copy.button.copy_text is not None

@@ -12,13 +12,16 @@ from aiogram.types import (
     InputMediaDocument,
     InputMediaPhoto,
     InputRichBlockButtons,
+    InputRichBlockDivider,
     InputRichBlockDocument,
+    InputRichBlockFooter,
     InputRichBlockParagraph,
     InputRichBlockPhoto,
     InputRichBlockSectionHeading,
     InputRichBlockUnion,
     InputRichMessage,
     RichMessageButton,
+    RichTextBold,
     RichTextButton,
     WebAppInfo,
 )
@@ -36,6 +39,10 @@ _ACTIONS: dict[str, RenderKind] = {
     "o": "skin",
 }
 _LABELS = {"h": "Head", "f": "Front", "b": "Back", "s": "Side", "t": "Three-view", "o": "Original"}
+
+# Preview switchers read as the orthographic body angles, then the head crop with the
+# composite three-view. Original, Open 3D and Share leave or forward the current render.
+_VIEW_ROWS: tuple[tuple[str, ...], ...] = (("f", "b", "s"), ("h", "t"))
 
 # A preview callback carries the scope of the chat its message lives in, because a rebuilt
 # inline message must keep the button type that chat accepts: web_app works in private chats
@@ -114,14 +121,26 @@ def open_button(
     return InlineKeyboardButton(text=text, url=mini_app_link(asset, bot_username))
 
 
-def share_markup(
+def preview_button(
+    asset: SkinAsset, key: str, *, private: bool, locale: str | None = None
+) -> InlineKeyboardButton:
+    """Switch the message to one render in the chat scope whose callbacks it accepts."""
+    scope = _SCOPE_PRIVATE if private else _SCOPE_PUBLIC
+    return InlineKeyboardButton(
+        text=tr(_LABELS[key], locale),
+        callback_data=f"p:{key}:{scope}:{action_reference(asset.reference)}",
+    )
+
+
+def action_buttons(
     asset: SkinAsset,
     service: SkinService,
     bot_username: str,
     *,
     private: bool,
     locale: str | None = None,
-) -> InlineKeyboardMarkup:
+) -> list[InlineKeyboardButton]:
+    """Open the 3D viewer, share the skin, and copy the UUID where no paragraph shows it."""
     buttons = [
         open_button(asset, service, bot_username, private=private, locale=locale),
         InlineKeyboardButton(text=tr("Share", locale), switch_inline_query=asset.reference),
@@ -132,7 +151,19 @@ def share_markup(
                 text=tr("Copy UUID", locale), copy_text=CopyTextButton(text=str(asset.uuid))
             )
         )
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+    return buttons
+
+
+def share_markup(
+    asset: SkinAsset,
+    service: SkinService,
+    bot_username: str,
+    *,
+    private: bool,
+    locale: str | None = None,
+) -> InlineKeyboardMarkup:
+    row = action_buttons(asset, service, bot_username, private=private, locale=locale)
+    return InlineKeyboardMarkup(inline_keyboard=[row])
 
 
 def preview_markup(
@@ -143,20 +174,38 @@ def preview_markup(
     private: bool,
     locale: str | None = None,
 ) -> InlineKeyboardMarkup:
-    reference = action_reference(asset.reference)
-    scope = _SCOPE_PRIVATE if private else _SCOPE_PUBLIC
     rows = [
-        [
-            InlineKeyboardButton(
-                text=tr(_LABELS[key], locale), callback_data=f"p:{key}:{scope}:{reference}"
-            )
-            for key in keys
-        ]
-        for keys in (("h", "f", "b"), ("s", "t", "o"))
+        [preview_button(asset, key, private=private, locale=locale) for key in keys]
+        for keys in _VIEW_ROWS
     ]
-    share = share_markup(asset, service, bot_username, private=private, locale=locale)
-    rows.append(share.inline_keyboard[0])
+    rows.append(
+        [
+            preview_button(asset, "o", private=private, locale=locale),
+            *action_buttons(asset, service, bot_username, private=private, locale=locale),
+        ]
+    )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def switch_target(button: InlineKeyboardButton) -> RenderKind | None:
+    """The render a preview callback button opens, or None for buttons that do something else."""
+    if not button.callback_data:
+        return None
+    try:
+        return parse_action(button.callback_data)[1]
+    except ValueError:
+        return None
+
+
+def rich_button(button: InlineKeyboardButton, active: RenderKind | None) -> RichMessageButton:
+    """Carry a keyboard button into the card, marking the shown view and the 3D entry point."""
+    target = switch_target(button)
+    style: str | None = None
+    if target is not None and target == active:
+        style = "primary"
+    elif button.url is not None or button.web_app is not None:
+        style = "success"
+    return RichMessageButton(**button.model_dump(exclude_none=True, exclude={"style"}), style=style)
 
 
 def rich_profile(
@@ -164,17 +213,22 @@ def rich_profile(
     media: InputMediaPhoto | InputMediaDocument,
     markup: InlineKeyboardMarkup,
     *,
+    active: RenderKind | None = None,
     locale: str | None = None,
 ) -> InputRichMessage:
+    """Lay the skin out as a card: title, render, profile details, then the control rows."""
     blocks: list[InputRichBlockUnion] = [
-        InputRichBlockSectionHeading(text=asset_name(asset, locale), size=3),
+        InputRichBlockSectionHeading(text=asset_name(asset, locale), size=2),
         (
             InputRichBlockPhoto(photo=media)
             if isinstance(media, InputMediaPhoto)
             else InputRichBlockDocument(document=media)
         ),
         InputRichBlockParagraph(
-            text=f"{tr('Model', locale)}: {tr(asset.model.value.capitalize(), locale)}"
+            text=[
+                f"{tr('Model', locale)}: ",
+                RichTextBold(text=tr(asset.model.value.capitalize(), locale)),
+            ]
         ),
     ]
     if asset.uuid:
@@ -192,15 +246,13 @@ def rich_profile(
             )
         )
     if asset.cape_url:
-        blocks.append(InputRichBlockParagraph(text=tr("Cape available in 3D", locale)))
+        # A hint about the viewer rather than a profile fact, so it stays visually quiet.
+        blocks.append(InputRichBlockFooter(text=tr("Cape available in 3D", locale)))
+    blocks.append(InputRichBlockDivider())
     for row in markup.inline_keyboard:
         # The UUID paragraph copies itself, so its duplicate button is dropped here. The
-        # shorter action row and the centered rows keep the button grid aligned.
-        buttons = [
-            RichMessageButton(**button.model_dump(exclude_none=True))
-            for button in row
-            if button.copy_text is None
-        ]
+        # view rows sit above, leaving Original, Open 3D and Share as the action row.
+        buttons = [rich_button(button, active) for button in row if button.copy_text is None]
         if not buttons:
             continue
         blocks.append(InputRichBlockButtons(buttons=buttons, align="center"))

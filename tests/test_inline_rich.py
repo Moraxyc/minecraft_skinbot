@@ -10,13 +10,16 @@ from aiogram.methods import AnswerCallbackQuery, AnswerInlineQuery, EditMessageT
 from aiogram.methods.base import TelegramMethod, TelegramType
 from aiogram.types import (
     CallbackQuery,
+    CopyTextButton,
     InlineQueryResultCachedDocument,
     InlineQueryResultCachedPhoto,
     InputRichBlockButtons,
+    InputRichBlockDivider,
     InputRichBlockDocument,
     InputRichBlockParagraph,
     InputRichBlockPhoto,
     InputRichMessageContent,
+    RichTextBold,
     RichTextButton,
     Update,
 )
@@ -26,7 +29,7 @@ from minecraft_skin_bot.telegram.formatting import action_reference, parse_actio
 from minecraft_skin_bot.telegram.inline import InlineSkins
 from test_media_cache import CacheSession
 from test_service import settings
-from test_telegram import PLAYER, USER, Harness, Provider, inline_update
+from test_telegram import PLAYER, USER, Harness, Provider, copy_button_paragraph, inline_update
 
 
 class InlineSession(CacheSession):
@@ -103,36 +106,33 @@ async def test_only_inline_skin_uses_rich_content_with_cached_photo_and_actions(
     blocks = skin.input_message_content.rich_message.blocks or []
     photo = next(block for block in blocks if isinstance(block, InputRichBlockPhoto))
     assert photo.photo.media == skin.photo_file_id
-    assert any(
-        isinstance(block, InputRichBlockParagraph) and block.text == "Model: Classic"
-        for block in blocks
-    )
+    model_line = next(block for block in blocks if isinstance(block, InputRichBlockParagraph))
+    assert isinstance(model_line.text, list)
+    assert model_line.text[0] == "Model: "
+    assert isinstance(model_line.text[-1], RichTextBold)
+    assert model_line.text[-1].text == "Classic"
+    assert any(isinstance(block, InputRichBlockDivider) for block in blocks)
     rows = [block for block in blocks if isinstance(block, InputRichBlockButtons)]
     assert [button.text for row in rows[:2] for button in row.buttons] == [
-        "Head",
         "Front",
         "Back",
         "Side",
+        "Head",
         "Three-view",
-        "Original",
     ]
     for row in rows[:2]:
         for button in row.buttons:
             assert button.callback_data and len(button.callback_data.encode()) <= 64
             assert parse_action(button.callback_data)[0] == PLAYER.hex
     actions = rows[-1].buttons
-    assert [button.text for button in actions] == ["Open 3D", "Share"]
-    assert actions[0].url == f"https://t.me/minecraft_skin_bot?startapp={PLAYER.hex}"
+    assert [button.text for button in actions] == ["Original", "Open 3D", "Share"]
+    assert actions[1].url == f"https://t.me/minecraft_skin_bot?startapp={PLAYER.hex}"
     assert all(button.web_app is None for button in actions)
-    assert actions[1].switch_inline_query == PLAYER.hex
-    uuid_line = next(
-        block
-        for block in blocks
-        if isinstance(block, InputRichBlockParagraph) and isinstance(block.text, list)
-    )
+    assert actions[2].switch_inline_query == PLAYER.hex
+    uuid_line = copy_button_paragraph(blocks)
     assert isinstance(uuid_line.text, list)
     copy = uuid_line.text[-1]
-    assert isinstance(copy, RichTextButton) and copy.button.copy_text is not None
+    assert isinstance(copy, RichTextButton) and isinstance(copy.button.copy_text, CopyTextButton)
     assert copy.button.copy_text.text == str(PLAYER)
 
 
@@ -162,11 +162,15 @@ async def test_inline_callback_without_message_rebuilds_cached_rich_for_clickers
     photo = next(block for block in blocks if isinstance(block, InputRichBlockPhoto))
     assert isinstance(photo.photo.media, str) and photo.photo.media.startswith("photo-")
     rows = [block for block in blocks if isinstance(block, InputRichBlockButtons)]
-    assert rows[0].buttons[0].text == "头像"
+    assert [button.text for button in rows[0].buttons] == ["正面", "背面", "侧面"]
+    assert [button.text for button in rows[1].buttons] == ["头像", "三视图"]
+    assert rows[0].buttons[1].style == "primary"
     assert all(
-        parse_action(button.callback_data or "")[0] == asset.reference for button in rows[0].buttons
+        parse_action(button.callback_data or "")[0] == asset.reference
+        for row in rows[:2]
+        for button in row.buttons
     )
-    assert rows[-1].buttons[0].url == (
+    assert rows[-1].buttons[1].url == (
         f"https://t.me/minecraft_skin_bot?startapp={reference if uploaded else PLAYER.hex}"
     )
     ack = rich_harness.session.calls[-1]
@@ -208,9 +212,10 @@ async def test_inline_callback_keeps_the_scope_of_the_chat_it_was_sent_from(
         for block in edit.rich_message.blocks or []
         if isinstance(block, InputRichBlockButtons)
     ]
-    assert rows[0].buttons[0].text == "头像"
-    assert parse_action(rows[0].buttons[0].callback_data or "") == (PLAYER.hex, "head", True)
-    opened = rows[-1].buttons[0]
+    head = next(button for row in rows for button in row.buttons if button.text == "头像")
+    assert parse_action(head.callback_data or "") == (PLAYER.hex, "head", True)
+    assert head.style == "primary"
+    opened = next(button for button in rows[-1].buttons if button.text == "打开 3D")
     assert opened.web_app is not None
     assert opened.web_app.url == f"https://viewer.example?uuid={PLAYER.hex}&lang=zh_Hans"
 

@@ -201,7 +201,13 @@ class SkinMessages:
             try:
                 await bot.send_rich_message(
                     message.chat.id,
-                    rich_profile(asset, InputMediaPhoto(media=file), markup, locale=locale),
+                    rich_profile(
+                        asset,
+                        InputMediaPhoto(media=file),
+                        markup,
+                        active=kind,
+                        locale=locale,
+                    ),
                 )
                 return
             except (TelegramNotFound, TelegramBadRequest) as error:
@@ -238,7 +244,7 @@ class SkinMessages:
                 await bot.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=message.message_id,
-                    rich_message=rich_profile(asset, media, markup, locale=locale),
+                    rich_message=rich_profile(asset, media, markup, active=kind, locale=locale),
                 )
                 return
             except (TelegramNotFound, TelegramBadRequest) as error:

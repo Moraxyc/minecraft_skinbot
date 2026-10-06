@@ -48,7 +48,7 @@ async def test_locale_follows_each_update_with_english_fallback(
     assert isinstance(reply, SendPhoto) and isinstance(reply.reply_markup, InlineKeyboardMarkup)
     assert ("模型: 经典" if chinese else "Model: Classic") in (reply.caption or "")
     assert "Notch" in (reply.caption or "") and str(PLAYER) in (reply.caption or "")
-    head = reply.reply_markup.inline_keyboard[0][0]
+    head = reply.reply_markup.inline_keyboard[1][0]
     assert head.text == ("头像" if chinese else "Head")
     assert head.callback_data == f"p:h:private:{action_reference(PLAYER.hex)}"
 
@@ -66,7 +66,7 @@ async def test_callback_edits_use_the_clickers_language_not_the_message_sender(
     assert isinstance(edited, EditMessageMedia)
     assert "模型: 经典" in (edited.media.caption or "")
     assert isinstance(edited.reply_markup, InlineKeyboardMarkup)
-    assert edited.reply_markup.inline_keyboard[0][0].text == "头像"
+    assert edited.reply_markup.inline_keyboard[1][0].text == "头像"
 
 
 async def test_concurrent_inline_languages_keep_personal_text_and_share_media_cache(

@@ -209,4 +209,4 @@ class InlineSkins:
         markup = preview_markup(
             asset, self.service, self.bot_username, private=private, locale=locale
         )
-        return rich_profile(asset, media, markup, locale=locale)
+        return rich_profile(asset, media, markup, active=kind, locale=locale)
