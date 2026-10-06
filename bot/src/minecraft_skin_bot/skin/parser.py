@@ -4,7 +4,7 @@ import struct
 from dataclasses import dataclass
 from io import BytesIO
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 from minecraft_skin_bot.minecraft.models import SkinModel
 
@@ -82,7 +82,7 @@ def parse_skin(data: bytes, model: SkinModel = SkinModel.UNKNOWN) -> ParsedSkin:
         with Image.open(BytesIO(data)) as source:
             image = source.convert("RGBA")
             image.load()
-    except (OSError, ValueError, SyntaxError, UnidentifiedImageError) as error:
+    except (OSError, ValueError, SyntaxError) as error:
         raise InvalidSkin("The skin PNG could not be decoded.") from error
     legacy = dimensions == (64, 32)
     if sum(image.getchannel("A").histogram()[:255]) == 0:

@@ -73,12 +73,13 @@ class SkinService:
             else await self.provider.resolve_username(reference)
         )
         profile = await self.provider.get_profile(uuid)
-        if profile.skin_url is None:
+        skin_url = profile.skin_url
+        if skin_url is None:
             raise UtilityError(
                 "Skin unavailable", "This profile has no public skin texture.", status=404
             )
         data = await self.cache.get_or_create(
-            "texture:" + profile.skin_url, lambda: self.provider.get_skin(profile.skin_url or "")
+            "texture:" + skin_url, lambda: self.provider.get_skin(skin_url)
         )
         try:
             model = await asyncio.to_thread(self._model, data, profile.model)
@@ -89,10 +90,11 @@ class SkinService:
         digest = hashlib.sha256(data).hexdigest()
         await self.cache.put("skin:" + digest, data)
         cape_url = None
-        if profile.cape_url is not None:
+        cape_texture_url = profile.cape_url
+        if cape_texture_url is not None:
             cape = await self.cache.get_or_create(
-                "texture:" + profile.cape_url,
-                lambda: self.provider.get_skin(profile.cape_url or ""),
+                "texture:" + cape_texture_url,
+                lambda: self.provider.get_skin(cape_texture_url),
             )
             await asyncio.to_thread(self._validate_cape, cape)
             cape_hash = hashlib.sha256(cape).hexdigest()

@@ -1,5 +1,4 @@
 import base64
-import binascii
 import json
 import re
 from typing import Any
@@ -71,7 +70,7 @@ class MojangProfileProvider:
             if not isinstance(value, dict):
                 raise ValueError("Expected an object")
             return value
-        except (ValueError, UnicodeDecodeError) as exc:
+        except ValueError as exc:
             raise unavailable() from exc
 
     async def resolve_username(self, username: str) -> UUID:
@@ -143,8 +142,6 @@ class MojangProfileProvider:
                 TypeError,
                 ValueError,
                 AttributeError,
-                binascii.Error,
-                UnicodeDecodeError,
             ) as exc:
                 raise unavailable() from exc
 
