@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import os
 import re
 import shutil
+import socket
 
 import aiohttp
 from aiogram import Bot, Dispatcher
@@ -40,8 +42,30 @@ def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 
+# systemd hands activated sockets over as descriptors starting at 3 (sd_listen_fds(3)).
+SD_LISTEN_FDS_START = 3
+
+
+def inherited_sockets() -> list[socket.socket]:
+    """Return the listening sockets passed down by systemd socket activation."""
+    if os.environ.get("LISTEN_PID") != str(os.getpid()):
+        return []
+    try:
+        count = int(os.environ.get("LISTEN_FDS", "0"))
+    except ValueError:
+        return []
+    return [
+        socket.socket(fileno=fd) for fd in range(SD_LISTEN_FDS_START, SD_LISTEN_FDS_START + count)
+    ]
+
+
 async def start_listener(runner: web.AppRunner, settings: Settings) -> None:
-    """Bind the public API, using a unix socket when the deployment provides one."""
+    """Bind the public API from an inherited descriptor, a unix socket, or TCP."""
+    inherited = inherited_sockets()
+    if inherited:
+        for listener in inherited:
+            await web.SockSite(runner, listener).start()
+        return
     if settings.api_unix_socket is None:
         await web.TCPSite(runner, settings.api_host, settings.api_port).start()
         return

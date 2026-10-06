@@ -1,3 +1,5 @@
+import os
+import socket
 import stat
 from dataclasses import replace
 from pathlib import Path
@@ -128,5 +130,44 @@ async def test_unix_socket_listener_replaces_stale_socket_and_serves_api(tmp_pat
                 assert response.status == 200
                 assert await response.json() == {"status": "ok"}
     finally:
+        await runner.cleanup()
+        await service.close()
+
+
+def test_inherited_sockets_ignores_foreign_and_malformed_activation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LISTEN_PID", str(os.getpid() + 1))
+    monkeypatch.setenv("LISTEN_FDS", "1")
+    assert app.inherited_sockets() == []
+    monkeypatch.setenv("LISTEN_PID", str(os.getpid()))
+    monkeypatch.setenv("LISTEN_FDS", "invalid")
+    assert app.inherited_sockets() == []
+    monkeypatch.delenv("LISTEN_FDS")
+    assert app.inherited_sockets() == []
+
+
+async def test_systemd_socket_listener_serves_api_from_inherited_descriptor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runtime = settings(tmp_path)
+    service = SkinService(StartupProvider(), FileCache(tmp_path / "content"), runtime)
+    runner = web.AppRunner(create_web_app(service, "runtime_skin_bot"), access_log=None)
+    await runner.setup()
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    monkeypatch.setattr(app, "SD_LISTEN_FDS_START", os.dup(listener.fileno()))
+    monkeypatch.setenv("LISTEN_PID", str(os.getpid()))
+    monkeypatch.setenv("LISTEN_FDS", "1")
+    try:
+        await app.start_listener(runner, runtime)
+        async with aiohttp.ClientSession() as client:
+            async with client.get(f"http://127.0.0.1:{port}/healthz") as response:
+                assert response.status == 200
+                assert await response.json() == {"status": "ok"}
+    finally:
+        listener.close()
         await runner.cleanup()
         await service.close()

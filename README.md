@@ -47,6 +47,8 @@ Supply environment variables through your process manager or shell. `.env.exampl
 | `UPLOAD_TTL_SECONDS` | Upload availability; default `86400`, minimum `60` |
 | `TELEGRAM_RICH_MESSAGES` | Rich Message enhancement; default `true`; use `false` for classic photo messages |
 
+A listening socket inherited through systemd socket activation (`LISTEN_FDS`) takes precedence over `API_UNIX_SOCKET`, `API_HOST` and `API_PORT`.
+
 HTTP viewer/API URLs are supported on localhost for development.
 
 ## Run the viewer
@@ -148,7 +150,7 @@ Import `nixosModules.default` from this flake into your NixOS configuration:
 
 Supply `tokenFile` as a quoted runtime path managed by your secret manager. systemd loads that file as a credential and the startup wrapper supplies `TELEGRAM_BOT_TOKEN` inside the bot process. The service uses a dynamic user and disposable content storage at `/var/cache/minecraft-skin-bot`.
 
-The optional nginx integration builds the viewer with `publicBaseUrl`, serves static assets and proxies `/api/` and `/healthz`. With `nginx.enable = true` the bot drops the TCP listener and binds `/run/minecraft-skin-bot/api.sock` with group access for `services.nginx.group`; nginx proxies that socket directly. The Bot API supplies the bot username at startup. Configure HTTPS certificates on that nginx virtual host using your existing certificate or ACME setup. `apiHost` and `apiPort` only configure the direct listener used when the nginx integration is off; `uploadTtlSeconds`, `richMessages`, `package` and `webPackage` provide deployment overrides.
+The optional nginx integration builds the viewer with `publicBaseUrl`, serves static assets and proxies `/api/` and `/healthz`. With `nginx.enable = true` the bot drops the TCP listener: the module creates a systemd socket unit at `/run/minecraft-skin-bot/api.sock` (mode `0660`, group `services.nginx.group`) and passes its descriptor to the bot, which accepts it through systemd socket activation instead of creating the socket itself. nginx proxies that socket directly, and a service restart no longer interrupts the listener. The Bot API supplies the bot username at startup. Configure HTTPS certificates on that nginx virtual host using your existing certificate or ACME setup. `apiHost` and `apiPort` only configure the direct listener used when the nginx integration is off; `uploadTtlSeconds`, `richMessages`, `package` and `webPackage` provide deployment overrides.
 
 ## Verification
 

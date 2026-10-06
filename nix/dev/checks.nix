@@ -98,11 +98,21 @@
             assert service.serviceConfig.CacheDirectory == "minecraft-skin-bot";
             assert service.serviceConfig.DynamicUser;
             assert service.environment.CACHE_DIR == "/var/cache/minecraft-skin-bot";
-            assert service.environment.API_UNIX_SOCKET == "/run/minecraft-skin-bot/api.sock";
-            assert service.environment.API_UNIX_SOCKET_GROUP == "nginx";
+            assert !(service.environment ? API_UNIX_SOCKET);
+            assert !(service.environment ? API_UNIX_SOCKET_GROUP);
             assert !(service.environment ? API_HOST);
-            assert service.serviceConfig.RuntimeDirectory == "minecraft-skin-bot";
-            assert service.serviceConfig.SupplementaryGroups == [ "nginx" ];
+            assert service.serviceConfig.Sockets == [ "minecraft-skin-bot.socket" ];
+            assert !(service.serviceConfig ? RuntimeDirectory);
+            assert !(service.serviceConfig ? SupplementaryGroups);
+            assert proxied.systemd.sockets.minecraft-skin-bot.listenStreams == [
+              "/run/minecraft-skin-bot/api.sock"
+            ];
+            assert proxied.systemd.sockets.minecraft-skin-bot.socketConfig == {
+              SocketMode = "0660";
+              SocketGroup = "nginx";
+            };
+            assert proxied.systemd.sockets.minecraft-skin-bot.wantedBy == [ "sockets.target" ];
+            assert !(direct.systemd.sockets ? minecraft-skin-bot);
             assert
               proxied.services.nginx.virtualHosts."skin.example.com".locations."/api/".proxyPass
               == "http://unix:/run/minecraft-skin-bot/api.sock";
@@ -115,10 +125,12 @@
             pkgs.runCommand "minecraft-skin-bot-module-checks"
               {
                 unit = proxied.systemd.units."minecraft-skin-bot.service".unit;
+                socketUnit = proxied.systemd.units."minecraft-skin-bot.socket".unit;
                 probeScript = lib.removeSuffix " " probe.systemd.services.minecraft-skin-bot.serviceConfig.ExecStart;
               }
               ''
                 test -f "$unit/minecraft-skin-bot.service"
+                test -f "$socketUnit/minecraft-skin-bot.socket"
                 mkdir "$TMPDIR/credentials"
                 printf %s '123456:synthetic_fixture_only' > "$TMPDIR/credentials/telegram-bot-token"
                 CREDENTIALS_DIRECTORY="$TMPDIR/credentials" "$probeScript"

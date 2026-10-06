@@ -7,6 +7,7 @@
 let
   cfg = config.services.minecraft-skin-bot;
   socketPath = "/run/minecraft-skin-bot/api.sock";
+  socketUnit = "minecraft-skin-bot.socket";
   proxyOverSocket = cfg.nginx.enable;
   proxyGroup = config.services.nginx.group;
 in
@@ -100,6 +101,15 @@ in
         message = "Set the nginx host name for the hosted viewer.";
       }
     ];
+    systemd.sockets.minecraft-skin-bot = lib.mkIf proxyOverSocket {
+      description = "Minecraft skin bot public viewer API socket";
+      wantedBy = [ "sockets.target" ];
+      listenStreams = [ socketPath ];
+      socketConfig = {
+        SocketMode = "0660";
+        SocketGroup = proxyGroup;
+      };
+    };
     systemd.services.minecraft-skin-bot = {
       description = "Minecraft skin bot and public viewer API";
       after = [ "network-online.target" ];
@@ -114,18 +124,10 @@ in
           UPLOAD_TTL_SECONDS = toString cfg.uploadTtlSeconds;
           TELEGRAM_RICH_MESSAGES = lib.boolToString cfg.richMessages;
         }
-        // (
-          if proxyOverSocket then
-            {
-              API_UNIX_SOCKET = socketPath;
-              API_UNIX_SOCKET_GROUP = proxyGroup;
-            }
-          else
-            {
-              API_HOST = cfg.apiHost;
-              API_PORT = toString cfg.apiPort;
-            }
-        );
+        // lib.optionalAttrs (!proxyOverSocket) {
+          API_HOST = cfg.apiHost;
+          API_PORT = toString cfg.apiPort;
+        };
       enableStrictShellChecks = true;
       script = ''
         TELEGRAM_BOT_TOKEN="$(<"$CREDENTIALS_DIRECTORY/telegram-bot-token")"
@@ -169,9 +171,7 @@ in
         AmbientCapabilities = "";
       }
       // lib.optionalAttrs proxyOverSocket {
-        RuntimeDirectory = "minecraft-skin-bot";
-        RuntimeDirectoryMode = "0755";
-        SupplementaryGroups = [ proxyGroup ];
+        Sockets = [ socketUnit ];
       };
     };
     services.nginx = lib.mkIf cfg.nginx.enable {
