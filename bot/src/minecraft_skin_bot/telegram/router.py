@@ -8,7 +8,12 @@ from pathlib import PurePath
 from typing import Any
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramNotFound
+from aiogram.exceptions import (
+    TelegramAPIError,
+    TelegramBadRequest,
+    TelegramNotFound,
+    TelegramRetryAfter,
+)
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BufferedInputFile,
@@ -17,6 +22,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineQuery,
     InlineQueryResultArticle,
+    InlineQueryResultsButton,
     InputMediaDocument,
     InputMediaPhoto,
     InputTextMessageContent,
@@ -34,7 +40,12 @@ from minecraft_skin_bot.telegram.formatting import (
     rich_profile,
 )
 from minecraft_skin_bot.telegram.i18n import SkinI18nMiddleware, i18n, locale_from_user, tr
-from minecraft_skin_bot.telegram.inline import InlineSkins, parse_query
+from minecraft_skin_bot.telegram.inline import (
+    InlineResult,
+    InlineSkins,
+    MediaUploadLimited,
+    parse_query,
+)
 from minecraft_skin_bot.telegram.media import MediaCacheUnavailable
 
 logger = logging.getLogger(__name__)
@@ -51,6 +62,35 @@ FILE_ID_DETAIL_HINTS = ("padding in the string", "wrong last symbol", "can't uns
 STALE_QUERY_MARKERS = ("query is too old", "query id is invalid", "response timeout expired")
 
 MEDIA_ERROR = UtilityError("Skins unavailable", "Send the player name again in a moment.")
+INLINE_QUERY_SECONDS = 8
+INLINE_ANSWER_SECONDS = 2
+
+
+async def answer_inline(
+    query: InlineQuery,
+    deadline: float,
+    results: list[InlineResult],
+    *,
+    button: InlineQueryResultsButton | None = None,
+    cache_time: int,
+) -> None:
+    for attempt in range(2):
+        try:
+            async with asyncio.timeout_at(deadline):
+                await query.answer(
+                    results,
+                    button=button,
+                    cache_time=cache_time,
+                    is_personal=True,
+                    request_timeout=INLINE_ANSWER_SECONDS,
+                )
+            return
+        except TelegramRetryAfter as error:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if attempt or error.retry_after + INLINE_ANSWER_SECONDS >= remaining:
+                logger.info("Inline answer rate limited beyond its deadline")
+                return
+            await asyncio.sleep(max(0, error.retry_after))
 
 
 def error_message(error: UtilityError, locale: str | None = None) -> str:
@@ -400,6 +440,9 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
                 )
                 await callback.answer(error_message(MEDIA_ERROR, locale), show_alert=True)
                 return
+            except MediaUploadLimited:
+                await callback.answer(tr("Try again in a moment.", locale), show_alert=True)
+                return
             except TimeoutError:
                 logger.warning(
                     "Inline skin action timed out", extra={"operation": "inline_callback"}
@@ -425,9 +468,17 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
 
     @router.inline_query()
     async def inline_query(query: InlineQuery, bot: Bot) -> None:
+        deadline = asyncio.get_running_loop().time() + INLINE_QUERY_SECONDS
+        try:
+            async with asyncio.timeout_at(deadline):
+                await answer_query(query, bot, deadline)
+        except TimeoutError:
+            logger.info("Inline query reached its response deadline")
+
+    async def answer_query(query: InlineQuery, bot: Bot, deadline: float) -> None:
         parsed = parse_query(query.query)
         if parsed is None:
-            await query.answer([], cache_time=3, is_personal=True)
+            await answer_inline(query, deadline, [], cache_time=3)
             return
         locale = locale_from_user(query.from_user)
         # A web_app button launches only inside the sender's private chat with the bot, so an
@@ -435,16 +486,26 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
         private = query.chat_type == "sender"
         try:
             results, button = await inline.results(
-                bot, parsed, inline_query_id=query.id, locale=locale, private=private
+                bot,
+                parsed,
+                inline_query_id=query.id,
+                locale=locale,
+                private=private,
+                deadline=deadline - INLINE_ANSWER_SECONDS,
             )
         except UtilityError as error:
-            await query.answer(
-                [failure_article("lookup-error", error)], cache_time=5, is_personal=True
+            await answer_inline(
+                query, deadline, [failure_article("lookup-error", error, locale)], cache_time=5
+            )
+            return
+        except TimeoutError:
+            await answer_inline(
+                query, deadline, [failure_article("media-error", MEDIA_ERROR, locale)], cache_time=1
             )
             return
         try:
-            await query.answer(
-                results, button=button, cache_time=60 if results else 0, is_personal=True
+            await answer_inline(
+                query, deadline, results, button=button, cache_time=60 if len(results) == 4 else 0
             )
             return
         except TelegramBadRequest as error:
@@ -457,12 +518,18 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
                 "Inline media rejected, refreshing the cached uploads (%s)", brief(error)
             )
         try:
-            await inline.invalidate(bot, parsed.reference)
+            async with asyncio.timeout_at(deadline - INLINE_ANSWER_SECONDS):
+                await inline.invalidate(bot, parsed.reference)
             results, button = await inline.results(
-                bot, parsed, inline_query_id=query.id, locale=locale, private=private
+                bot,
+                parsed,
+                inline_query_id=query.id,
+                locale=locale,
+                private=private,
+                deadline=deadline - INLINE_ANSWER_SECONDS,
             )
-            await query.answer(
-                results, button=button, cache_time=60 if results else 0, is_personal=True
+            await answer_inline(
+                query, deadline, results, button=button, cache_time=60 if len(results) == 4 else 0
             )
         except TelegramBadRequest as error:
             if stale_query(error):
@@ -472,13 +539,15 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
                 raise
             # Fresh uploads were rejected too, so the media is not the problem; degrade instead.
             logger.warning("Inline media rejected after refreshing (%s)", brief(error))
-            await query.answer(
-                [failure_article("media-error", MEDIA_ERROR)], cache_time=5, is_personal=True
+            await answer_inline(
+                query, deadline, [failure_article("media-error", MEDIA_ERROR, locale)], cache_time=5
             )
         except UtilityError as error:
-            await query.answer(
-                [failure_article("lookup-error", error)], cache_time=5, is_personal=True
+            await answer_inline(
+                query, deadline, [failure_article("lookup-error", error, locale)], cache_time=5
             )
+        except TimeoutError:
+            await answer_inline(query, deadline, [], button=button, cache_time=0)
 
     @router.errors()
     async def recover_request(event: ErrorEvent, bot: Bot) -> bool:

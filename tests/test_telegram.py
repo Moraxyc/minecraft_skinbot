@@ -13,7 +13,7 @@ from uuid import UUID
 import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
-from aiogram.exceptions import TelegramBadRequest, TelegramNotFound
+from aiogram.exceptions import TelegramBadRequest, TelegramNotFound, TelegramRetryAfter
 from aiogram.methods import (
     AnswerInlineQuery,
     EditMessageMedia,
@@ -114,6 +114,7 @@ class TelegramSession(BaseSession):
         self.edit_errors: dict[str, str] = {}
         self.inline_error: str | None = None
         self.inline_error_count = 1
+        self.inline_retry_after: int | None = None
 
     async def close(self) -> None:
         pass
@@ -136,6 +137,11 @@ class TelegramSession(BaseSession):
         if name == "answerInlineQuery" and self.inline_error and self.inline_error_count:
             self.inline_error_count -= 1
             raise TelegramBadRequest(method=method, message=self.inline_error)
+        if name == "answerInlineQuery" and self.inline_retry_after is not None:
+            retry_after, self.inline_retry_after = self.inline_retry_after, None
+            raise TelegramRetryAfter(
+                method=method, message="Synthetic flood control", retry_after=retry_after
+            )
         if name in {"answerInlineQuery", "answerCallbackQuery"}:
             return cast(TelegramType, True)
         if name == "getFile":
@@ -632,6 +638,18 @@ async def test_expired_inline_query_stops_without_reporting_a_failure(
     ] == []
 
 
+@pytest.mark.parametrize("retry_after", [0, 30])
+async def test_inline_answer_retries_only_when_telegram_wait_fits_its_response_budget(
+    harness: Harness, retry_after: int
+) -> None:
+    harness.session.inline_retry_after = retry_after
+    async with asyncio.timeout(0.5):
+        await harness.dispatcher().feed_update(harness.bot, inline_update("Notch"))
+    answers = [call for call in harness.session.calls if isinstance(call, AnswerInlineQuery)]
+    assert len(answers) == (2 if retry_after == 0 else 1)
+    assert all(len(answer.results) == 4 for answer in answers)
+
+
 async def test_repeatedly_rejected_inline_media_degrades_instead_of_failing(
     harness: Harness,
 ) -> None:
@@ -733,6 +751,10 @@ async def test_uploaded_png_actions_remain_self_contained(
     reference, kind, _ = parse_action(first_action)
     asset = await harness.service.resolve(reference)
     assert kind == "head" and asset.skin == harness.provider.png
+    assert asset.upload_expires_at is not None
+    expires = datetime.fromtimestamp(asset.upload_expires_at, UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    assert f"Link expires at {expires}." in (output.caption or "")
+    assert "Send the PNG again after expiry." in (output.caption or "")
     startapp = mini_app_link(asset, "minecraft_skin_bot").split("startapp=", 1)[1]
     assert len(startapp) == 44 and ":" not in startapp
     assert parse_action("p:t:" + startapp) == (reference, "three-view", False)

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -7,7 +8,7 @@ from typing import cast
 
 import pytest
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
 from aiogram.methods import AnswerInlineQuery, GetChat, GetChatMember, SendPhoto
 from aiogram.methods.base import TelegramMethod, TelegramType
 from aiogram.types import (
@@ -64,6 +65,8 @@ class CacheSession(TelegramSession):
         self.migrate_to_chat_id: int | None = None
         self.network_failure = False
         self.left = False
+        self.retry_after: int | None = None
+        self.upload_gate: asyncio.Event | None = None
 
     async def make_request(
         self,
@@ -74,6 +77,10 @@ class CacheSession(TelegramSession):
         target = getattr(method, "chat_id", None)
         if method.__api_method__ == self.failure_method and target == self.cache_chat.id:
             self.calls.append(method)
+            if self.retry_after is not None:
+                raise TelegramRetryAfter(
+                    method=method, message="Synthetic flood control", retry_after=self.retry_after
+                )
             if self.network_failure:
                 raise TelegramNetworkError(method=method, message="Synthetic transport timeout")
             body: dict[str, object] = {
@@ -92,6 +99,8 @@ class CacheSession(TelegramSession):
             self.calls.append(method)
             member = ChatMemberLeft(user=self.member.user) if self.left else self.member
             return cast(TelegramType, member)
+        if method.__api_method__ == "sendPhoto" and self.upload_gate is not None:
+            await self.upload_gate.wait()
         return await super().make_request(bot, method, timeout)
 
 
@@ -126,7 +135,8 @@ async def test_inline_cache_target_failure_keeps_3d_and_recovers_all_four_media(
         await dispatcher.feed_update(cache_harness.bot, inline_update("Notch"))
     answer = session.calls[-1]
     assert isinstance(answer, AnswerInlineQuery)
-    assert answer.results == [] and answer.cache_time == 0
+    assert len(answer.results) == (3 if failed_method == "sendDocument" else 0)
+    assert answer.cache_time == 0
     assert answer.button and answer.button.text == "Previews unavailable · Open 3D"
     assert answer.button.web_app and "uuid=" in answer.button.web_app.url
     record = next(record for record in caplog.records if hasattr(record, "operation"))
@@ -148,6 +158,50 @@ async def test_inline_cache_target_failure_keeps_3d_and_recovers_all_four_media(
     assert isinstance(recovered, AnswerInlineQuery)
     assert [result.type for result in recovered.results] == ["photo", "photo", "photo", "document"]
     assert recovered.cache_time == 60
+
+
+async def test_slow_cache_upload_answers_in_budget_with_cached_later_results_and_3d(
+    cache_harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = cast(CacheSession, cache_harness.session)
+    inline = InlineSkins(cache_harness.service, cache_harness.settings, "minecraft_skin_bot")
+    asset = await cache_harness.service.resolve("Notch")
+    head = await inline.file_id(cache_harness.bot, asset, "head")
+    original = await inline.file_id(cache_harness.bot, asset, "skin")
+    session.upload_gate = asyncio.Event()
+    monkeypatch.setattr("minecraft_skin_bot.telegram.router.INLINE_QUERY_SECONDS", 0.2)
+    monkeypatch.setattr("minecraft_skin_bot.telegram.router.INLINE_ANSWER_SECONDS", 0.05)
+    async with asyncio.timeout(0.5):
+        await cache_harness.dispatcher().feed_update(cache_harness.bot, inline_update("head Notch"))
+    answer = session.calls[-1]
+    assert isinstance(answer, AnswerInlineQuery)
+    assert [result.type for result in answer.results] == ["photo", "document"]
+    assert getattr(answer.results[0], "photo_file_id", None) == head
+    assert getattr(answer.results[1], "document_file_id", None) == original
+    assert answer.button and answer.button.web_app and "uuid=" in answer.button.web_app.url
+    assert answer.cache_time == 0
+
+
+async def test_media_retry_after_keeps_cached_results_without_retrying_uploads_before_deadline(
+    cache_harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = cast(CacheSession, cache_harness.session)
+    inline = InlineSkins(cache_harness.service, cache_harness.settings, "minecraft_skin_bot")
+    asset = await cache_harness.service.resolve("Notch")
+    head = await inline.file_id(cache_harness.bot, asset, "head")
+    clock = 100.0
+    monkeypatch.setattr("minecraft_skin_bot.telegram.inline.monotonic", lambda: clock)
+    session.failure_method, session.retry_after = "sendPhoto", 30
+    for _ in range(2):
+        async with asyncio.timeout(0.5):
+            results, button = await inline.results(cache_harness.bot, SkinQuery("Notch"))
+        assert len(results) == 1 and getattr(results[0], "photo_file_id", None) == head
+        assert button.web_app and "uuid=" in button.web_app.url
+    assert len([call for call in session.calls if isinstance(call, SendPhoto)]) == 2
+    clock += 31
+    session.failure_method = None
+    results, _ = await inline.results(cache_harness.bot, SkinQuery("Notch"))
+    assert len(results) == 4
 
 
 @pytest.mark.parametrize(

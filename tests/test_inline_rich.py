@@ -16,6 +16,7 @@ from aiogram.types import (
     InputRichBlockButtons,
     InputRichBlockDivider,
     InputRichBlockDocument,
+    InputRichBlockFooter,
     InputRichBlockParagraph,
     InputRichBlockPhoto,
     InputRichMessageContent,
@@ -159,6 +160,9 @@ async def test_inline_callback_without_message_rebuilds_cached_rich_for_clickers
     )
     assert edit.rich_message and edit.text is None
     blocks = edit.rich_message.blocks or []
+    if uploaded:
+        expiry = next(block for block in blocks if isinstance(block, InputRichBlockFooter))
+        assert "到期。到期后请重新发送 PNG。" in expiry.text
     photo = next(block for block in blocks if isinstance(block, InputRichBlockPhoto))
     assert isinstance(photo.photo.media, str) and photo.photo.media.startswith("photo-")
     rows = [block for block in blocks if isinstance(block, InputRichBlockButtons)]

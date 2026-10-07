@@ -2,6 +2,7 @@
 
 import base64
 import re
+from datetime import UTC, datetime
 from html import escape
 from uuid import UUID
 
@@ -55,6 +56,15 @@ def asset_name(asset: SkinAsset, locale: str | None = None) -> str:
     return asset.name if asset.uuid else tr("Uploaded skin", locale)
 
 
+def upload_expiry(asset: SkinAsset, locale: str | None = None) -> str | None:
+    if asset.upload_expires_at is None:
+        return None
+    expires = datetime.fromtimestamp(asset.upload_expires_at, UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return tr("Link expires at {expires}. Send the PNG again after expiry.", locale).format(
+        expires=expires
+    )
+
+
 def caption(asset: SkinAsset, *, locale: str | None = None) -> str:
     model = tr(asset.model.value.capitalize(), locale)
     text = f"<b>{escape(asset_name(asset, locale))}</b>\n{tr('Model', locale)}: {model}"
@@ -62,6 +72,9 @@ def caption(asset: SkinAsset, *, locale: str | None = None) -> str:
         text += f"\nUUID: <code>{asset.uuid}</code>"
     if asset.cape_url:
         text += "\n" + tr("Cape available in 3D", locale)
+    expiry = upload_expiry(asset, locale)
+    if expiry:
+        text += "\n" + expiry
     return text
 
 
@@ -248,6 +261,9 @@ def rich_profile(
     if asset.cape_url:
         # A hint about the viewer rather than a profile fact, so it stays visually quiet.
         blocks.append(InputRichBlockFooter(text=tr("Cape available in 3D", locale)))
+    expiry = upload_expiry(asset, locale)
+    if expiry:
+        blocks.append(InputRichBlockFooter(text=expiry))
     blocks.append(InputRichBlockDivider())
     for row in markup.inline_keyboard:
         # The UUID paragraph copies itself, so its duplicate button is dropped here. The
