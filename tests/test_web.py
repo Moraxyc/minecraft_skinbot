@@ -9,7 +9,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from minecraft_skin_bot.cache import FileCache
 from minecraft_skin_bot.service import SkinService
 from minecraft_skin_bot.web import create_web_app
-from test_service import Provider, settings, skin_bytes
+from test_service import Provider, TextureProvider, settings, skin_bytes
 
 
 @pytest.fixture
@@ -92,3 +92,24 @@ async def test_missing_skin_and_cape_content_have_public_viewer_contracts(
     assert degraded["cape_url"] is None
     assert degraded["cape_unavailable"] is True
     assert degraded["skin_url"] == data["skin_url"]
+
+
+async def test_snapshot_api_returns_the_shared_texture_after_player_changes(
+    api: tuple[TestClient[web.Request, web.Application], SkinService],
+) -> None:
+    client, service = api
+    provider = TextureProvider()
+    service.provider = provider
+    original = await (await client.get("/api/profile/069a79f444e94726a5befca90e38aaf5")).json()
+    provider.color = "blue"
+    changed = await (await client.get("/api/profile/069a79f444e94726a5befca90e38aaf5")).json()
+    assert changed["skin_url"] != original["skin_url"]
+    snapshot = original["snapshot_reference"]
+    response = await client.get("/api/texture/" + snapshot.removeprefix("texture:"))
+    fixed = await response.json()
+    assert response.status == 200
+    assert fixed["reference"] == fixed["snapshot_reference"] == snapshot
+    assert fixed["skin_url"] == original["skin_url"]
+    assert fixed["upload_expires_at"] is None
+    assert fixed["uuid"] is None
+    assert fixed["name"] == "Shared skin"

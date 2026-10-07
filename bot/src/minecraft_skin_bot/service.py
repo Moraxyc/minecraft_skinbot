@@ -12,6 +12,7 @@ from PIL import Image
 from minecraft_skin_bot.cache import FileCache
 from minecraft_skin_bot.config import Settings
 from minecraft_skin_bot.errors import UtilityError
+from minecraft_skin_bot.minecraft.client import texture_url
 from minecraft_skin_bot.minecraft.models import SkinModel
 from minecraft_skin_bot.minecraft.provider import MinecraftProfileProvider
 from minecraft_skin_bot.skin.parser import InvalidSkin, parse_skin
@@ -21,6 +22,8 @@ CONTENT_HASH = re.compile(r"[0-9a-f]{64}\Z")
 UUID_REFERENCE = re.compile(
     r"(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\Z"
 )
+TEXTURE_TOKEN = re.compile(r"([csu])-([0-9a-f]{32,64})(?:-([0-9a-f]{32,64}))?\Z")
+TEXTURE_MODELS = {"c": SkinModel.CLASSIC, "s": SkinModel.SLIM, "u": SkinModel.UNKNOWN}
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +37,7 @@ class SkinAsset:
     cape_url: str | None
     cape_unavailable: bool = False
     upload_expires_at: float | None = None
+    snapshot_reference: str | None = None
 
 
 class SkinService:
@@ -52,6 +56,19 @@ class SkinService:
         return parsed.model
 
     async def resolve(self, reference: str) -> SkinAsset:
+        if reference.startswith("texture:"):
+            match = TEXTURE_TOKEN.fullmatch(reference.removeprefix("texture:"))
+            if match is None:
+                raise UtilityError("Invalid skin", "Open a skin link or send a Minecraft skin PNG.")
+            model, skin_hash, cape_hash = match.groups()
+            return await self._resolve_texture(
+                reference,
+                "Shared skin",
+                None,
+                TEXTURE_MODELS[model],
+                "https://textures.minecraft.net/texture/" + skin_hash,
+                "https://textures.minecraft.net/texture/" + cape_hash if cape_hash else None,
+            )
         if reference.startswith("upload:"):
             digest = reference.removeprefix("upload:")
             if not CONTENT_HASH.fullmatch(digest):
@@ -90,11 +107,24 @@ class SkinService:
             raise UtilityError(
                 "Skin unavailable", "This profile has no public skin texture.", status=404
             )
+        return await self._resolve_texture(
+            uuid.hex, profile.name, uuid, profile.model, skin_url, profile.cape_url
+        )
+
+    async def _resolve_texture(
+        self,
+        reference: str,
+        name: str,
+        uuid: UUID | None,
+        declared_model: SkinModel,
+        skin_url: str,
+        cape_texture_url: str | None,
+    ) -> SkinAsset:
         data = await self.cache.get_or_create(
             "texture:" + skin_url, lambda: self.provider.get_skin(skin_url)
         )
         try:
-            model = await asyncio.to_thread(self._model, data, profile.model)
+            model = await asyncio.to_thread(self._model, data, declared_model)
         except InvalidSkin as exc:
             raise UtilityError(
                 "Skin unavailable", "Minecraft returned an unsupported skin texture.", status=502
@@ -103,7 +133,6 @@ class SkinService:
         await self.cache.put("skin:" + digest, data)
         cape_url = None
         cape_unavailable = False
-        cape_texture_url = profile.cape_url
         if cape_texture_url is not None:
 
             async def download_cape() -> bytes:
@@ -128,15 +157,26 @@ class SkinService:
                 await self.cache.put("cape:" + cape_hash, cape)
                 cape_url = self.settings.public_base_url + f"/api/cape/{cape_hash}.png"
         return SkinAsset(
-            uuid.hex,
-            profile.name,
+            reference,
+            name,
             uuid,
             model,
             digest,
             data,
             cape_url,
             cape_unavailable=cape_unavailable,
+            snapshot_reference=self._snapshot_reference(model, skin_url, cape_texture_url),
         )
+
+    @staticmethod
+    def _snapshot_reference(model: SkinModel, skin_url: str, cape_url: str | None) -> str | None:
+        try:
+            skin_hash = texture_url(skin_url).rsplit("/", 1)[1]
+            cape_hash = texture_url(cape_url).rsplit("/", 1)[1] if cape_url else None
+        except ValueError:
+            return None
+        model_code = next(code for code, value in TEXTURE_MODELS.items() if value == model)
+        return f"texture:{model_code}-{skin_hash}" + ("-" + cape_hash if cape_hash else "")
 
     @staticmethod
     def _validate_cape(data: bytes) -> None:
@@ -199,10 +239,15 @@ class SkinService:
         params = dict(parse_qsl(parsed.query))
         params.pop("uuid", None)
         params.pop("upload", None)
+        params.pop("texture", None)
         params.pop("lang", None)
-        params["uuid" if asset.uuid else "upload"] = (
-            asset.uuid.hex if asset.uuid else asset.content_hash
-        )
+        snapshot = asset.snapshot_reference
+        if snapshot:
+            params["texture"] = snapshot.removeprefix("texture:")
+        else:
+            params["uuid" if asset.uuid else "upload"] = (
+                asset.uuid.hex if asset.uuid else asset.content_hash
+            )
         if locale:
             # Mini Apps launched from a keyboard button or inline mode get empty initData, so
             # the caller's language travels in the URL instead of Telegram.WebApp.

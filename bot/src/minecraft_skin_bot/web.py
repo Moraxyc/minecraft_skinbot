@@ -60,6 +60,7 @@ def create_web_app(
                 "cape_url": asset.cape_url,
                 "cape_unavailable": asset.cape_unavailable,
                 "upload_expires_at": asset.upload_expires_at,
+                "snapshot_reference": asset.snapshot_reference,
                 "reference": asset.reference,
                 "bot_username": bot_username,
             }
@@ -78,6 +79,9 @@ def create_web_app(
     async def upload(request: web.Request) -> web.Response:
         return profile_json(await service.resolve("upload:" + request.match_info["digest"]))
 
+    async def texture(request: web.Request) -> web.Response:
+        return profile_json(await service.resolve("texture:" + request.match_info["token"]))
+
     async def skin(request: web.Request) -> web.Response:
         data = await service.read_skin(request.match_info["digest"])
         return web.Response(
@@ -95,6 +99,7 @@ def create_web_app(
 
     app.router.add_get("/api/profile/{uuid}", profile)
     app.router.add_get("/api/upload/{digest}", upload)
+    app.router.add_get("/api/texture/{token}", texture)
     app.router.add_get("/api/skin/{digest}.png", skin)
     app.router.add_get("/api/cape/{digest}.png", cape)
     app.router.add_get("/healthz", health)

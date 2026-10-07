@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import os
 import shutil
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID
@@ -49,6 +50,30 @@ class Provider:
             raise self.cape_error
         await asyncio.sleep(0.01)
         return self.cape if url.startswith("cape:") and self.cape is not None else skin_bytes(url)
+
+
+class TextureProvider(Provider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.textures: dict[str, bytes] = {}
+        self.profile_lookups = 0
+
+    def _url(self, data: bytes) -> str:
+        url = "https://textures.minecraft.net/texture/" + hashlib.sha256(data).hexdigest()
+        self.textures[url] = data
+        return url
+
+    async def get_profile(self, uuid: UUID) -> Profile:
+        self.profile_lookups += 1
+        return replace(
+            await super().get_profile(uuid),
+            skin_url=self._url(skin_bytes(self.color)),
+            cape_url=self._url(self.cape) if self.cape else None,
+        )
+
+    async def get_skin(self, url: str) -> bytes:
+        self.downloads += 1
+        return self.textures[url]
 
 
 def settings(tmp_path: Path) -> Settings:
@@ -149,3 +174,49 @@ async def test_failed_cape_preserves_skin_and_unexpected_failures_propagate(
         assert not recovered.cape_unavailable
     finally:
         await service.close()
+
+
+async def test_texture_reference_survives_skin_changes_and_cache_deletion(tmp_path: Path) -> None:
+    provider = TextureProvider()
+    provider.cape = skin_bytes("yellow", height=32)
+    service = SkinService(provider, FileCache(tmp_path / "content"), settings(tmp_path))
+    original = await service.resolve(PLAYER.hex)
+    assert original.snapshot_reference is not None
+    assert "texture=" in service.viewer_url(original)
+    provider.color = "blue"
+    provider.cape = None
+    current = await service.resolve(PLAYER.hex)
+    assert current.content_hash != original.content_hash
+    shutil.rmtree(tmp_path / "content")
+    restored = await service.resolve(original.snapshot_reference)
+    assert restored.skin == original.skin
+    assert restored.model == original.model
+    assert restored.cape_url == original.cape_url
+    assert restored.snapshot_reference == original.snapshot_reference
+    assert restored.uuid is None
+    assert restored.upload_expires_at is None
+    assert provider.profile_lookups == 2
+    assert await service.preview(restored, "front") == await service.preview(original, "front")
+    await service.close()
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "c-" + "a" * 31,
+        "c-" + "a" * 65,
+        "q-" + "a" * 64,
+        "c-https://evil.example",
+        "c-" + "a" * 64 + "-../secret",
+    ],
+)
+async def test_texture_reference_rejects_untrusted_or_malformed_tokens(
+    tmp_path: Path, token: str
+) -> None:
+    provider = TextureProvider()
+    service = SkinService(provider, FileCache(tmp_path / "content"), settings(tmp_path))
+    with pytest.raises(UtilityError) as error:
+        await service.resolve("texture:" + token)
+    assert error.value.title == "Invalid skin"
+    assert provider.profile_lookups == provider.downloads == 0
+    await service.close()
