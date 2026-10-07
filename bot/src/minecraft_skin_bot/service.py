@@ -10,6 +10,7 @@ from uuid import UUID
 from PIL import Image
 
 from minecraft_skin_bot.cache import FileCache
+from minecraft_skin_bot.cache.content import CacheBudget
 from minecraft_skin_bot.config import Settings
 from minecraft_skin_bot.errors import UtilityError
 from minecraft_skin_bot.minecraft.client import texture_url
@@ -48,6 +49,9 @@ class SkinService:
         self.cache = cache
         self.settings = settings
         self.uploads = FileCache(settings.cache_dir / "uploads", ttl=settings.upload_ttl_seconds)
+        budget = CacheBudget(settings.cache_max_bytes)
+        self.cache.attach_budget(budget)
+        self.uploads.attach_budget(budget, protected=True)
 
     @staticmethod
     def _model(data: bytes, model: SkinModel) -> SkinModel:

@@ -149,11 +149,16 @@ test('real renderer respects explicit slim metadata, layers, reset, legacy conve
     viewer.skin.camera.position.set(100, 12, 40);
     viewer.reset();
     const cameraReset = Math.abs(viewer.skin.camera.position.x) < 1e-6 && Math.abs(viewer.skin.camera.position.y) < 1e-6 && viewer.skin.camera.position.z > 0;
+    const distance = viewer.skin.camera.position.length();
+    viewer.zoom('in');
+    const zoomsIn = viewer.skin.camera.position.length() < distance;
+    viewer.zoom('out');
+    const zoomRestored = Math.abs(viewer.skin.camera.position.length() - distance) < 1e-6;
     Object.assign(window, { verificationViewer: viewer });
     canvas.id = 'touch-verification';
-    return { classicModel, model, capeVisible, layersHidden, animation, cameraReset, touchAction: canvas.style.touchAction };
+    return { classicModel, model, capeVisible, layersHidden, animation, cameraReset, zoomsIn, zoomRestored, touchAction: canvas.style.touchAction };
   }, { uuid, hash });
-  expect(result).toEqual({ classicModel: 'default', model: 'slim', capeVisible: true, layersHidden: true, animation: 'WalkingAnimation', cameraReset: true, touchAction: 'none' });
+  expect(result).toEqual({ classicModel: 'default', model: 'slim', capeVisible: true, layersHidden: true, animation: 'WalkingAnimation', cameraReset: true, zoomsIn: true, zoomRestored: true, touchAction: 'none' });
 
   const touchCanvas = page.locator('#touch-verification');
   await touchCanvas.scrollIntoViewIfNeeded();
@@ -182,6 +187,59 @@ test('real renderer respects explicit slim metadata, layers, reset, legacy conve
   await page.goto(`/?upload=${hash}`);
   await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
   await expect(page.locator('#details')).toHaveText('Model: Unknown');
+  await expect(page.getByLabel('Preview model', { exact: true })).toBeHidden();
+});
+
+test('keyboard camera controls and upload model overrides work while motion is paused', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installFixtures(page, 'unknown');
+  await page.goto(`/?upload=${hash}`);
+  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
+  const canvas = page.locator('#viewer');
+  const front = await canvas.screenshot();
+  await page.waitForTimeout(160);
+  expect((await canvas.screenshot()).equals(front)).toBe(true);
+  await page.getByRole('button', { name: 'Side', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  const side = await canvas.screenshot();
+  expect(side.equals(front)).toBe(false);
+  await page.getByRole('button', { name: 'Back', exact: true }).focus();
+  await page.keyboard.press('Space');
+  expect((await canvas.screenshot()).equals(side)).toBe(false);
+  await page.getByRole('button', { name: 'Front', exact: true }).click();
+  expect((await canvas.screenshot()).equals(front)).toBe(true);
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  expect((await canvas.screenshot()).equals(front)).toBe(false);
+  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  expect((await canvas.screenshot()).equals(front)).toBe(true);
+
+  const model = page.getByLabel('Preview model', { exact: true });
+  await model.selectOption('slim');
+  const slim = await canvas.screenshot();
+  await model.selectOption('classic');
+  expect((await canvas.screenshot()).equals(slim)).toBe(false);
+  await model.selectOption('auto');
+  expect((await canvas.screenshot()).equals(front)).toBe(true);
+  await expect(page.locator('#details')).toHaveText('Model: Unknown');
+
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  const running = await canvas.screenshot();
+  await page.waitForTimeout(160);
+  expect((await canvas.screenshot()).equals(running)).toBe(false);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  const paused = await canvas.screenshot();
+  await page.waitForTimeout(160);
+  expect((await canvas.screenshot()).equals(paused)).toBe(true);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.goto(`/?uuid=${uuid}`);
+  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
+  await expect(model).toBeHidden();
 });
 
 test('uploads display the server expiry and explain how to recover expired links', async ({ page }) => {

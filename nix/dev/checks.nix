@@ -20,6 +20,8 @@
           tokenFile,
           package,
           webhookUrl ? null,
+          lookupRateLimit ? { },
+          cacheMaxBytes ? 536870912,
         }:
         (nixpkgs.lib.nixosSystem {
           inherit pkgs;
@@ -37,6 +39,7 @@
                 enable = true;
                 inherit tokenFile;
                 inherit webhookUrl;
+                inherit cacheMaxBytes;
                 package = lib.mkForce package;
                 apiHost = address;
                 cacheChatId = -1001234567890;
@@ -45,6 +48,7 @@
                 nginx = lib.optionalAttrs nginx {
                   enable = true;
                   hostName = "skin.example.com";
+                  inherit lookupRateLimit;
                 };
               };
             }
@@ -68,6 +72,24 @@
         nginx = false;
         tokenFile = "/run/secrets/synthetic-skin-bot";
         package = bot;
+      };
+      limited = configuration {
+        address = "127.0.0.1";
+        nginx = true;
+        tokenFile = "/run/secrets/synthetic-skin-bot";
+        package = bot;
+        cacheMaxBytes = 1048576;
+        lookupRateLimit = {
+          requestsPerSecond = 1;
+          burst = 1;
+        };
+      };
+      unlimited = configuration {
+        address = "127.0.0.1";
+        nginx = true;
+        tokenFile = "/run/secrets/synthetic-skin-bot";
+        package = bot;
+        lookupRateLimit.enable = false;
       };
       invalid = configuration {
         address = "127.0.0.1";
@@ -144,6 +166,8 @@
             assert allAssertions proxied;
             assert allAssertions hooked;
             assert allAssertions direct;
+            assert allAssertions limited;
+            assert allAssertions unlimited;
             assert !allAssertions invalid;
             assert !allAssertions invalidWebhook;
             assert
@@ -153,6 +177,8 @@
             assert service.serviceConfig.CacheDirectory == "minecraft-skin-bot";
             assert service.serviceConfig.DynamicUser;
             assert service.environment.CACHE_DIR == "/var/cache/minecraft-skin-bot";
+            assert service.environment.CACHE_MAX_BYTES == "536870912";
+            assert limited.systemd.services.minecraft-skin-bot.environment.CACHE_MAX_BYTES == "1048576";
             assert !(service.environment ? API_UNIX_SOCKET);
             assert !(service.environment ? API_UNIX_SOCKET_GROUP);
             assert !(service.environment ? API_HOST);
@@ -188,6 +214,10 @@
             assert !(directService.serviceConfig ? RuntimeDirectory);
             pkgs.runCommand "minecraft-skin-bot-module-checks"
               {
+                nativeBuildInputs = [
+                  pkgs.nginx
+                  pkgs.curl
+                ];
                 unit = proxied.systemd.units."minecraft-skin-bot.service".unit;
                 socketUnit = proxied.systemd.units."minecraft-skin-bot.socket".unit;
                 probeScript = lib.removeSuffix " " probe.systemd.services.minecraft-skin-bot.serviceConfig.ExecStart;
@@ -202,6 +232,67 @@
                 if CREDENTIALS_DIRECTORY="$TMPDIR/credentials" "$probeScript" 2>/dev/null; then
                   exit 1
                 fi
+                mkdir -p "$TMPDIR/content/api/"{profile,texture,upload,skin,cape} "$TMPDIR/content/telegram"
+                for path in api/profile/test api/texture/test api/upload/test api/skin/test api/cape/test healthz index.html telegram/webhook; do
+                  printf %s 'synthetic content' > "$TMPDIR/content/$path"
+                done
+                cat > "$TMPDIR/nginx.conf" <<CONF
+                pid $TMPDIR/nginx.pid;
+                error_log stderr;
+                events {}
+                http {
+                  access_log off;
+                  client_body_temp_path $TMPDIR/client_temp;
+                  proxy_temp_path $TMPDIR/proxy_temp;
+                  fastcgi_temp_path $TMPDIR/fastcgi_temp;
+                  uwsgi_temp_path $TMPDIR/uwsgi_temp;
+                  scgi_temp_path $TMPDIR/scgi_temp;
+                  ${limited.services.nginx.commonHttpConfig}
+                  server {
+                    listen 127.0.0.1:18081;
+                    root $TMPDIR/content;
+                    location ~ ^/api/(profile|texture|upload)/ {
+                      ${limited.services.nginx.virtualHosts."skin.example.com".locations."~ ^/api/(profile|texture|upload)/".extraConfig
+                      }
+                    }
+                  }
+                  server {
+                    listen 127.0.0.1:18082;
+                    root $TMPDIR/content;
+                    location /api/ {
+                      ${unlimited.services.nginx.virtualHosts."skin.example.com".locations."/api/".extraConfig}
+                    }
+                  }
+                }
+                CONF
+                nginx -t -p "$TMPDIR" -c "$TMPDIR/nginx.conf"
+                nginx -p "$TMPDIR" -c "$TMPDIR/nginx.conf" -g 'daemon off;' &
+                nginx_pid=$!
+                trap 'kill "$nginx_pid"; wait "$nginx_pid" || true' EXIT
+                for attempt in $(seq 1 50); do
+                  if curl --silent --max-time 0.1 --fail http://127.0.0.1:18081/healthz > /dev/null; then
+                    break
+                  fi
+                  sleep 0.1
+                done
+                rejected=0
+                for attempt in $(seq 1 10); do
+                  for path in profile texture upload; do
+                    status=$(curl --silent --max-time 1 -o /dev/null -w '%{http_code}' "http://127.0.0.1:18081/api/$path/test")
+                    case "$status" in
+                      200) ;;
+                      429) rejected=$((rejected + 1));;
+                      *) exit 1;;
+                    esac
+                  done
+                done
+                test "$rejected" -gt 0
+                for path in healthz index.html telegram/webhook api/skin/test api/cape/test; do
+                  test "$(curl --silent --max-time 1 -o /dev/null -w '%{http_code}' "http://127.0.0.1:18081/$path")" = 200
+                done
+                for attempt in $(seq 1 10); do
+                  test "$(curl --silent --max-time 1 -o /dev/null -w '%{http_code}' http://127.0.0.1:18082/api/profile/test)" = 200
+                done
                 touch "$out"
               '';
         }

@@ -2,6 +2,8 @@ import { IdleAnimation, RunningAnimation, SkinViewer, WalkingAnimation } from 's
 import type { SkinProfile } from './api';
 
 export type AnimationName = 'idle' | 'walk' | 'run';
+export type CameraView = 'front' | 'side' | 'back';
+export type PreviewModel = 'auto' | 'classic' | 'slim';
 
 async function textureImage(url: string, signal?: AbortSignal): Promise<ImageBitmap> {
   const response = await fetch(url, {
@@ -19,6 +21,7 @@ export class Viewer {
   private readonly resizeObserver: ResizeObserver;
   private readonly resize: () => void;
   private readonly onContextLost: () => void;
+  private detectedModel: 'default' | 'slim' = 'default';
 
   constructor(canvas: HTMLCanvasElement, stage: HTMLElement, onContextLost: () => void) {
     this.onContextLost = onContextLost;
@@ -37,14 +40,16 @@ export class Viewer {
     canvas.addEventListener('webglcontextlost', onContextLost);
   }
 
-  async load(profile: SkinProfile, signal?: AbortSignal): Promise<{ capeUnavailable: boolean }> {
+  async load(profile: SkinProfile, signal?: AbortSignal): Promise<{ capeUnavailable: boolean; canOverrideModel: boolean }> {
     const image = await textureImage(profile.skin_url, signal);
+    const canOverrideModel = image.height === 64 && profile.model === 'unknown';
     try {
       signal?.throwIfAborted();
       if (image.width !== 64 || (image.height !== 64 && image.height !== 32)) throw new Error('Invalid skin');
       this.skin.loadSkin(image, {
         model: image.height === 32 ? 'default' : profile.model === 'slim' ? 'slim' : profile.model === 'classic' ? 'default' : 'auto-detect',
       });
+      this.detectedModel = this.skin.playerObject.skin.modelType;
     } finally { image.close(); }
     let capeUnavailable = false;
     if (profile.cape_url) {
@@ -61,11 +66,34 @@ export class Viewer {
     }
     signal?.throwIfAborted();
     this.setAnimation('idle');
-    return { capeUnavailable };
+    return { capeUnavailable, canOverrideModel };
   }
 
   setAnimation(name: AnimationName): void {
     this.skin.animation = name === 'walk' ? new WalkingAnimation() : name === 'run' ? new RunningAnimation() : new IdleAnimation();
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.skin.animation) this.skin.animation.paused = paused;
+  }
+
+  setPreviewModel(model: PreviewModel): void {
+    this.skin.playerObject.skin.modelType = model === 'auto' ? this.detectedModel : model === 'slim' ? 'slim' : 'default';
+  }
+
+  setView(view: CameraView): void {
+    const { camera, controls } = this.skin;
+    const distance = camera.position.distanceTo(controls.target);
+    camera.position.set(view === 'side' ? distance : 0, 0, view === 'front' ? distance : view === 'back' ? -distance : 0).add(controls.target);
+    controls.update();
+  }
+
+  zoom(direction: 'in' | 'out'): void {
+    const { camera, controls } = this.skin;
+    const current = camera.position.distanceTo(controls.target);
+    const distance = Math.max(controls.minDistance, Math.min(controls.maxDistance, current * (direction === 'in' ? 0.8 : 1.25)));
+    camera.position.sub(controls.target).multiplyScalar(distance / current).add(controls.target);
+    controls.update();
   }
 
   setLayer(layer: 'inner' | 'outer', visible: boolean): void {

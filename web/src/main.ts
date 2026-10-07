@@ -1,7 +1,7 @@
 import { inlineReference, loadProfile, parseReference, ViewerError } from './api';
 import { localizeDocument, translator, viewerLocale } from './i18n';
 import { copyInlineQuery, getTelegram, initializeTelegram, shareInline } from './telegram';
-import { Viewer, type AnimationName } from './viewer';
+import { Viewer, type AnimationName, type CameraView, type PreviewModel } from './viewer';
 import './style.css';
 
 function element<T extends HTMLElement>(id: string): T {
@@ -26,6 +26,11 @@ const sharing = element<HTMLFieldSetElement>('sharing');
 const retry = element<HTMLButtonElement>('retry');
 const notice = element('viewer-notice');
 const expiry = element('upload-expiry');
+const modelControls = element('model-controls');
+const previewModel = element<HTMLSelectElement>('preview-model');
+const pause = element<HTMLButtonElement>('pause');
+const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+let animationPaused = motionPreference.matches;
 let canvas = element<HTMLCanvasElement>('viewer');
 let botUsername = '';
 let viewer: Viewer | undefined;
@@ -34,6 +39,20 @@ let contextLost = false;
 let loading = false;
 let closed = false;
 let request: AbortController | undefined;
+
+function updatePause(): void {
+  viewer?.setPaused(animationPaused);
+  pause.textContent = t(animationPaused ? 'resume' : 'pause');
+  pause.setAttribute('aria-pressed', String(animationPaused));
+}
+
+function updateMotionPreference(): void {
+  animationPaused = motionPreference.matches;
+  updatePause();
+}
+
+motionPreference.addEventListener('change', updateMotionPreference);
+updatePause();
 
 function share(kind: 'skin' | 'view'): void {
   if (!reference || !botUsername) return;
@@ -70,6 +89,7 @@ async function start(): Promise<void> {
   retry.disabled = true;
   notice.hidden = true;
   expiry.hidden = true;
+  modelControls.hidden = true;
   status.hidden = false;
   status.textContent = t('loading');
   try {
@@ -101,9 +121,12 @@ async function start(): Promise<void> {
     const result = await viewer.load(profile, request.signal);
     if (closed) return;
     viewerReady = true;
+    updatePause();
     viewer.skin.renderPaused = document.hidden;
     for (const layer of ['inner', 'outer']) element<HTMLInputElement>(layer).checked = true;
     for (const button of animationButtons) button.setAttribute('aria-pressed', String(button.dataset.animation === 'idle'));
+    previewModel.value = 'auto';
+    modelControls.hidden = reference.kind !== 'upload' || !result.canOverrideModel;
     if (profile.cape_unavailable || result.capeUnavailable) {
       notice.textContent = t('capeUnavailable');
       notice.hidden = false;
@@ -136,6 +159,16 @@ function onContextRestored(event: Event): void {
 
 retry.addEventListener('click', () => { void start(); });
 element('reset').addEventListener('click', () => viewer?.reset());
+element('zoom-in').addEventListener('click', () => viewer?.zoom('in'));
+element('zoom-out').addEventListener('click', () => viewer?.zoom('out'));
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-camera-view]')) {
+  button.addEventListener('click', () => viewer?.setView(button.dataset.cameraView as CameraView));
+}
+pause.addEventListener('click', () => {
+  animationPaused = !animationPaused;
+  updatePause();
+});
+previewModel.addEventListener('change', () => viewer?.setPreviewModel(previewModel.value as PreviewModel));
 for (const layer of ['inner', 'outer'] as const) {
   const checkbox = element<HTMLInputElement>(layer);
   checkbox.addEventListener('change', () => viewer?.setLayer(layer, checkbox.checked));
@@ -144,6 +177,7 @@ const animationButtons = document.querySelectorAll<HTMLButtonElement>('[data-ani
 for (const button of animationButtons) {
   button.addEventListener('click', () => {
     viewer?.setAnimation(button.dataset.animation as AnimationName);
+    updatePause();
     for (const item of animationButtons) item.setAttribute('aria-pressed', String(item === button));
   });
 }
@@ -169,5 +203,6 @@ window.addEventListener('pagehide', () => {
   viewer?.dispose();
   viewer = undefined;
   cleanupTelegram();
+  motionPreference.removeEventListener('change', updateMotionPreference);
 }, { once: true });
 void start();

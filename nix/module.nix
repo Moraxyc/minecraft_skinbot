@@ -13,6 +13,15 @@ let
   webhookUrl = if cfg.webhookUrl == null then null else lib.removeSuffix "/" cfg.webhookUrl;
   webhookMatch = if webhookUrl == null then null else builtins.match "https://[^/]+(/.*)" webhookUrl;
   webhookPath = if webhookMatch == null then null else builtins.head webhookMatch;
+  lookupLimit = cfg.nginx.lookupRateLimit;
+  proxyTimeouts = ''
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 25s;
+  '';
+  lookupLimits = ''
+    limit_req zone=minecraft_skin_lookups burst=${toString lookupLimit.burst} nodelay;
+    limit_req_status 429;
+  '';
 in
 {
   meta.maintainers = with lib.maintainers; [ moraxyc ];
@@ -72,6 +81,11 @@ in
       default = 86400;
       description = "Uploaded content availability in seconds.";
     };
+    cacheMaxBytes = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 536870912;
+      description = "Maximum disposable cache size in bytes, including protected uploads.";
+    };
     richMessages = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -84,6 +98,23 @@ in
         default = "";
         example = "skin.example.com";
         description = "nginx virtual host for the Mini App and API.";
+      };
+      lookupRateLimit = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Limit profile, fixed-texture and upload metadata requests per client IP.";
+        };
+        requestsPerSecond = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 5;
+          description = "Sustained lookup requests per second for each client IP.";
+        };
+        burst = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 10;
+          description = "Additional lookup requests accepted immediately before returning HTTP 429.";
+        };
       };
     };
   };
@@ -144,6 +175,7 @@ in
         PUBLIC_BASE_URL = cfg.publicBaseUrl;
         CACHE_DIR = "/var/cache/minecraft-skin-bot";
         UPLOAD_TTL_SECONDS = toString cfg.uploadTtlSeconds;
+        CACHE_MAX_BYTES = toString cfg.cacheMaxBytes;
         TELEGRAM_RICH_MESSAGES = lib.boolToString cfg.richMessages;
       }
       // lib.optionalAttrs (!proxyOverSocket) {
@@ -201,6 +233,9 @@ in
     };
     services.nginx = lib.mkIf cfg.nginx.enable {
       enable = true;
+      commonHttpConfig = lib.mkIf lookupLimit.enable ''
+        limit_req_zone $binary_remote_addr zone=minecraft_skin_lookups:10m rate=${toString lookupLimit.requestsPerSecond}r/s;
+      '';
       virtualHosts.${cfg.nginx.hostName} = {
         root = cfg.webPackage;
         locations = {
@@ -209,22 +244,22 @@ in
           };
           "/api/" = {
             proxyPass = "http://unix:${socketPath}";
-            extraConfig = ''
-              proxy_connect_timeout 3s;
-              proxy_read_timeout 25s;
-            '';
+            extraConfig = proxyTimeouts;
           };
           "/healthz" = {
             proxyPass = "http://unix:${socketPath}";
           };
         }
+        // lib.optionalAttrs lookupLimit.enable {
+          "~ ^/api/(profile|texture|upload)/" = {
+            proxyPass = "http://unix:${socketPath}";
+            extraConfig = proxyTimeouts + lookupLimits;
+          };
+        }
         // lib.optionalAttrs (webhookPath != null) {
           ${webhookPath} = {
             proxyPass = "http://unix:${socketPath}";
-            extraConfig = ''
-              proxy_connect_timeout 3s;
-              proxy_read_timeout 25s;
-            '';
+            extraConfig = proxyTimeouts;
           };
         };
       };

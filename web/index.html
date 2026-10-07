@@ -23,8 +23,18 @@
       <p id="viewer-notice" class="hint" role="status" hidden></p>
       <p class="hint gesture-hint" data-i18n="gestures">Drag to rotate · Pinch to zoom</p>
       <fieldset id="controls" disabled>
+        <p class="control-label" id="camera-label" data-i18n="cameraView">View</p>
+        <div class="camera-views" role="group" aria-labelledby="camera-label">
+          <button type="button" data-camera-view="front" data-i18n="front" class="secondary">Front</button>
+          <button type="button" data-camera-view="side" data-i18n="side" class="secondary">Side</button>
+          <button type="button" data-camera-view="back" data-i18n="back" class="secondary">Back</button>
+        </div>
         <div class="toolbar">
-          <button id="reset" data-i18n="reset" type="button" class="secondary">Reset camera</button>
+          <div class="camera-tools">
+            <button id="reset" data-i18n="reset" type="button" class="secondary">Reset camera</button>
+            <button id="zoom-in" data-i18n="zoomIn" type="button" class="secondary">Zoom in</button>
+            <button id="zoom-out" data-i18n="zoomOut" type="button" class="secondary">Zoom out</button>
+          </div>
           <div class="layers" data-i18n-aria="layers" aria-label="Skin layers">
             <label><input id="inner" type="checkbox" checked /> <span data-i18n="inner">Inner</span></label>
             <label><input id="outer" type="checkbox" checked /> <span data-i18n="outer">Outer</span></label>
@@ -35,6 +45,16 @@
           <button type="button" data-animation="idle" data-i18n="idle" aria-pressed="true" class="secondary">Idle</button>
           <button type="button" data-animation="walk" data-i18n="walk" aria-pressed="false" class="secondary">Walk</button>
           <button type="button" data-animation="run" data-i18n="run" aria-pressed="false" class="secondary">Run</button>
+          <button id="pause" type="button" data-i18n="pause" aria-pressed="false" class="secondary">Pause</button>
+        </div>
+        <div id="model-controls" hidden>
+          <label for="preview-model" data-i18n="previewModel">Preview model</label>
+          <select id="preview-model">
+            <option value="auto" data-i18n="automatic">Automatic</option>
+            <option value="classic" data-i18n="classic">Classic</option>
+            <option value="slim" data-i18n="slim">Slim</option>
+          </select>
+          <p class="hint" data-i18n="previewModelOnly">Changes the 3D preview only.</p>
         </div>
       </fieldset>
       <fieldset id="sharing" disabled>

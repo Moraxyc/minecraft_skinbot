@@ -168,5 +168,11 @@ msgstr "请稍后重新发送玩家名。"
 msgid "Skin service is busy"
 msgstr "皮肤服务繁忙"
 
+msgid "Cache full"
+msgstr "缓存空间已满"
+
+msgid "Try again after temporary uploads expire or increase the cache budget."
+msgstr "请等待临时上传到期后重试，或增加缓存容量。"
+
 msgid "Try again in a moment."
 msgstr "请稍后重试。"

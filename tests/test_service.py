@@ -220,3 +220,22 @@ async def test_texture_reference_rejects_untrusted_or_malformed_tokens(
     assert error.value.title == "Invalid skin"
     assert provider.profile_lookups == provider.downloads == 0
     await service.close()
+
+
+async def test_full_upload_budget_rejects_new_skins_and_renews_existing_content(tmp_path: Path) -> None:
+    original = skin_bytes("red")
+    service = SkinService(
+        Provider(), FileCache(tmp_path / "content"),
+        replace(settings(tmp_path), cache_max_bytes=len(original)),
+    )
+    uploaded = await service.upload(original)
+    with pytest.raises(UtilityError) as full:
+        await service.upload(skin_bytes("blue"))
+    assert full.value.title == "Cache full"
+    assert full.value.status == 503
+    assert (await service.resolve(uploaded.reference)).skin == original
+    renewed = await service.upload(original)
+    assert renewed.reference == uploaded.reference
+    assert renewed.upload_expires_at is not None
+    assert (await service.resolve(uploaded.reference)).upload_expires_at == renewed.upload_expires_at
+    await service.close()

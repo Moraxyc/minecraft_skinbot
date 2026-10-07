@@ -69,6 +69,7 @@ class Settings:
     api_unix_socket_group: str | None = None
     upload_ttl_seconds: int = 86400
     max_upload_bytes: int = 1048576
+    cache_max_bytes: int = 536870912
     rich_messages: bool = True
     webhook: Webhook | None = None
 
@@ -97,18 +98,21 @@ class Settings:
                 api_unix_socket=Path(socket_path) if socket_path else None,
                 api_unix_socket_group=socket_group or None,
                 upload_ttl_seconds=int(os.environ.get("UPLOAD_TTL_SECONDS", "86400")),
+                cache_max_bytes=int(os.environ.get("CACHE_MAX_BYTES", "536870912")),
                 rich_messages=os.environ.get("TELEGRAM_RICH_MESSAGES", "true").lower()
                 in {"true", "1", "yes"},
                 webhook=webhook,
             )
         except ValueError as exc:
-            raise ValueError("Cache chat, port and upload TTL must be valid integers.") from exc
+            raise ValueError("Cache chat, port, upload TTL and cache budget must be valid integers.") from exc
         if settings.cache_chat_id == 0 or abs(settings.cache_chat_id) >= 2**52:
             raise ValueError(
                 "Set TELEGRAM_CACHE_CHAT_ID to the target's full signed numeric chat ID."
             )
         if not 1 <= settings.api_port <= 65535 or settings.upload_ttl_seconds < 60:
             raise ValueError("Use a valid API port and an upload TTL of at least 60 seconds.")
+        if settings.cache_max_bytes <= 0:
+            raise ValueError("Use a positive cache byte budget.")
         if settings.api_unix_socket is not None and not settings.api_unix_socket.is_absolute():
             raise ValueError("Set API_UNIX_SOCKET to an absolute socket path.")
         return settings
