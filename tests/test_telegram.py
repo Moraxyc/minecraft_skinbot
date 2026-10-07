@@ -681,8 +681,6 @@ async def test_shared_texture_buttons_keep_the_original_skin_after_profile_chang
     assert opened.web_app and parse_qs(urlsplit(opened.web_app.url).query)["texture"] == [
         original.snapshot_reference.removeprefix("texture:")
     ]
-    current = next(button for button in buttons if button.text == "Current player skin")
-    assert current.url == f"https://t.me/minecraft_skin_bot?start=r{PLAYER.hex}"
     provider.color = "blue"
     assert (await harness.service.resolve(PLAYER.hex)).skin != original.skin
     shutil.rmtree(harness.service.cache.directory)

@@ -4,6 +4,7 @@ import { inlineReference, loadProfile, parseReference } from '../src/api';
 const uuid = '069a79f444e94726a5befca90e38aaf5';
 const hash = 'a'.repeat(64);
 const reference = { kind: 'profile' as const, id: uuid };
+const texture = { kind: 'texture' as const, id: `c-${hash}` };
 const profile = { uuid, reference: uuid, name: 'Notch', model: 'classic', skin_url: `https://skin.example/api/skin/${hash}.png`, cape_url: null, cape_unavailable: false, upload_expires_at: null, bot_username: 'resolved_skin_bot' };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -15,16 +16,26 @@ describe('public content selectors', () => {
     ['', uuid, reference],
     [`?upload=${hash}`, undefined, { kind: 'upload', id: hash }],
     ['', `upload_${hash}`, { kind: 'upload', id: hash }],
+    [`?texture=c-${hash}&lang=zh`, undefined, texture],
+    [`?tgWebAppStartParam=t-s-${hash}`, undefined, { kind: 'texture', id: `s-${hash}` }],
+    ['', `t-u-${hash}-${'b'.repeat(64)}`, { kind: 'texture', id: `u-${hash}-${'b'.repeat(64)}` }],
     [`?tgWebAppStartParam=u${btoa('\xaa'.repeat(32)).replace(/=+$/, '')}`, undefined, { kind: 'upload', id: hash }],
     ['', `u${'q'.repeat(43)}`, null],
     ['?uuid=../../cache', uuid, null],
     ['?upload=https://example.org/skin.png', undefined, null],
+    [`?texture=${hash}`, undefined, null],
+    [`?texture=q-${hash}`, undefined, null],
+    [`?texture=c-${hash}-../secret`, undefined, null],
+    ['', `t-c-${hash.slice(0, 31)}`, null],
     ['', 'upload_123', null],
   ])('resolves URL and Main Mini App inputs safely: %s', (search, start, expected) => {
     expect(parseReference(search, start)).toEqual(expected);
   });
   it('keeps uploads shareable using content identity', () => {
     expect(inlineReference({ kind: 'upload', id: hash })).toBe(`upload:${hash}`);
+  });
+  it('keeps fixed textures shareable as immutable references', () => {
+    expect(inlineReference(texture)).toBe(`texture:c-${hash}`);
   });
 });
 
@@ -73,5 +84,21 @@ describe('profile API boundary', () => {
   it('turns transport failure into concise retry guidance', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('raw network details')));
     await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Skin service is busy. Try again.');
+  });
+});
+
+describe('fixed texture API boundary', () => {
+  const shared = { ...profile, uuid: null, name: 'Shared skin', reference: `texture:c-${hash}` };
+  it('loads an immutable texture link through its own route', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(shared)));
+    vi.stubGlobal('fetch', fetcher);
+    const result = await loadProfile(texture, 'https://skin.example');
+    expect(result.name).toBe('Shared skin');
+    expect(result.upload_expires_at).toBeNull();
+    expect(fetcher.mock.calls[0][0].href).toBe(`https://skin.example/api/texture/c-${hash}`);
+  });
+  it('rejects a response that describes a different texture', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...shared, reference: `texture:c-${'b'.repeat(64)}` }))));
+    await expect(loadProfile(texture, 'https://skin.example')).rejects.toThrow('Reopen the skin to load its data.');
   });
 });

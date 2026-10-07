@@ -1,6 +1,6 @@
 import { translator } from './i18n';
 
-export type SkinReference = { kind: 'profile' | 'upload'; id: string };
+export type SkinReference = { kind: 'profile' | 'upload' | 'texture'; id: string };
 export type SkinModel = 'classic' | 'slim' | 'unknown';
 
 export interface SkinProfile {
@@ -17,6 +17,12 @@ export interface SkinProfile {
 
 const uuidPattern = /^[a-f0-9]{32}$/i;
 const hashPattern = /^[a-f0-9]{64}$/i;
+const texturePattern = /^[csu]-[a-f0-9]{32,64}(?:-[a-f0-9]{32,64})?$/i;
+
+function textureReference(token: string): SkinReference | null {
+  const id = token.toLowerCase();
+  return texturePattern.test(id) ? { kind: 'texture', id } : null;
+}
 
 export function parseReference(search: string, startParam?: string): SkinReference | null {
   const params = new URLSearchParams(search);
@@ -28,6 +34,7 @@ export function parseReference(search: string, startParam?: string): SkinReferen
     const id = params.get('upload') ?? '';
     return hashPattern.test(id) ? { kind: 'upload', id: id.toLowerCase() } : null;
   }
+  if (params.has('texture')) return textureReference(params.get('texture') ?? '');
   const value = params.get('tgWebAppStartParam') ?? startParam ?? '';
   if (uuidPattern.test(value)) return { kind: 'profile', id: value.toLowerCase() };
   if (/^u[A-Za-z0-9_-]{43}$/.test(value)) {
@@ -42,11 +49,12 @@ export function parseReference(search: string, startParam?: string): SkinReferen
   if (value.startsWith('upload_') && hashPattern.test(value.slice(7))) {
     return { kind: 'upload', id: value.slice(7).toLowerCase() };
   }
+  if (value.startsWith('t-')) return textureReference(value.slice(2));
   return null;
 }
 
 export function inlineReference(reference: SkinReference): string {
-  return reference.kind === 'upload' ? `upload:${reference.id}` : reference.id;
+  return reference.kind === 'profile' ? reference.id : `${reference.kind}:${reference.id}`;
 }
 
 type ViewerErrorCode = 'serviceBusy' | 'uploadExpired' | 'playerNotFound' | 'invalidData';
@@ -69,7 +77,7 @@ function assetURL(value: unknown, kind: 'skin' | 'cape', base: URL): string {
 
 export async function loadProfile(reference: SkinReference, apiBase: string, signal?: AbortSignal): Promise<SkinProfile> {
   const base = new URL(apiBase.replace(/\/$/, '') + '/', window.location.origin);
-  const path = reference.kind === 'upload' ? 'upload' : 'profile';
+  const path = reference.kind === 'profile' ? 'profile' : reference.kind;
   let response: Response;
   try {
     response = await fetch(new URL(`api/${path}/${reference.id}`, base), {

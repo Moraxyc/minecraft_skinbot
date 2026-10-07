@@ -97,7 +97,9 @@ async function start(): Promise<void> {
     if (closed) return;
     botUsername = profile.bot_username;
     sharing.disabled = false;
-    element('name').textContent = reference.kind === 'upload' ? t('uploadedSkin') : profile.name;
+    // Fixed texture and upload links carry no player name, so the heading stays localized.
+    const placeholder = reference.kind === 'profile' ? null : reference.kind === 'upload' ? 'uploadedSkin' : 'sharedSkin';
+    element('name').textContent = placeholder ? t(placeholder) : profile.name;
     element('details').textContent = `${t('model')}: ${t(profile.model)}${profile.cape_url ? ` · ${t('cape')}` : ''}`;
     if (profile.upload_expires_at !== null) {
       const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'long' })

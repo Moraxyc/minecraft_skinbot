@@ -32,11 +32,12 @@ async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown'
       return;
     }
     const upload = url.pathname.includes('/upload/');
+    const texture = url.pathname.includes('/texture/');
     await route.fulfill({
       json: {
-        uuid: upload ? null : uuid,
-        name: upload ? 'Uploaded skin' : 'Notch', model,
-        reference: upload ? `upload:${hash}` : uuid,
+        uuid: upload || texture ? null : uuid,
+        name: texture ? 'Shared skin' : upload ? 'Uploaded skin' : 'Notch', model,
+        reference: texture ? `texture:${url.pathname.split('/').pop()}` : upload ? `upload:${hash}` : uuid,
         skin_url: `${url.origin}/api/skin/${hash}.png`,
         cape_url: null,
         cape_unavailable: false,
@@ -46,6 +47,23 @@ async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown'
     });
   });
 }
+
+test('a fixed texture link from the bot opens the viewer with its immutable identity', async ({ page }) => {
+  await installFixtures(page, 'classic', false, 'zh-CN');
+  const token = `c-${hash}`;
+  await page.goto(`/?texture=${token}`);
+  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
+  await expect(page.getByRole('heading', { name: '分享的皮肤' })).toBeVisible();
+  await page.getByRole('button', { name: '分享皮肤', exact: true }).click();
+  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin texture:${token}`);
+  await page.goto(`/?tgWebAppStartParam=t-s-${hash}`);
+  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
+  await expect(page.getByRole('heading', { name: '分享的皮肤' })).toBeVisible();
+  await page.getByRole('button', { name: '分享皮肤', exact: true }).click();
+  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin texture:s-${hash}`);
+  await page.goto(`/?texture=q-${hash}`);
+  await expect(page.locator('#status')).toHaveText('从机器人打开有效的皮肤链接。');
+});
 
 test('mobile WebGL viewer loads, rotates, zooms, resizes, themes, and shares both launch paths', async ({ page }) => {
   await installFixtures(page);
