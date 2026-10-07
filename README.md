@@ -65,7 +65,7 @@ npm run dev
 npm run build
 ```
 
-Serve `web/dist` from any static host. The API supplies the bot username resolved at startup through Telegram `getMe`; the viewer uses it for Telegram links and external-browser sharing. A viewer URL accepts `?uuid=<32-character UUID>` or `?upload=<SHA-256>`, plus an optional `lang` that carries the sender's language into Mini Apps. Main Mini App deep links also carry the same selector through `startapp`.
+Serve `web/dist` from any static host. The API supplies the bot username resolved at startup through Telegram `getMe`; the viewer uses it for Telegram links and external-browser sharing. A viewer URL accepts `?uuid=<32-character UUID>`, `?upload=<SHA-256>` or `?texture=<token>`, plus an optional `lang` that carries the sender's language into Mini Apps. Main Mini App deep links also carry the same selector through `startapp`, using `t-<token>` for fixed textures.
 
 Fixed skin links use `?texture=<model>-<skin-CDN-hash>[-<cape-CDN-hash>]`, with `c`, `s` or `u` for Classic, Slim or Unknown. Their Main Mini App selector is `t-<token>` and their API route is `/api/texture/<token>`. These links carry everything needed to reload the original textures from the official CDN after local cache deletion. They do not follow later player skin changes. Profile responses provide the canonical `texture:<token>` as `snapshot_reference`; upload responses use `null`.
 
@@ -113,7 +113,7 @@ Inline Mode supplies Skin, Three-view, Head and Original Skin. Skin uses a cache
 
 Inline preparation has a six-second total budget and reserves two seconds for answering Telegram. Cached media remain usable while uncached results are prepared concurrently. Slow uploads or Telegram rate limits return the available results and a 3D viewer entry; the next query can reuse completed media. Telegram upload cooldowns avoid repeatedly calling a rate-limited method.
 
-Opening 3D or sharing a profile's skin uses its fixed texture reference. **Current player skin** opens a fresh UUID query. Preview callbacks on a UUID card continue to resolve that player's current skin and refresh the card's links together. A fixed texture card provides 3D and sharing actions without callbacks that exceed Telegram's 64-byte callback limit.
+Opening 3D or sharing a profile's skin uses its fixed texture reference. Preview callbacks on a UUID card continue to resolve that player's current skin and refresh the card's links together. A fixed texture card provides 3D and sharing actions without callbacks that exceed Telegram's 64-byte callback limit.
 
 The Mini App uses `Telegram.WebApp.switchInlineQuery` (6.7+) for **Share Skin** and **Share Three-view**, with queries such as `skin <uuid>` and `view <uuid>`. Plain browser viewing offers a copyable inline query and a Telegram bot link. Telegram's `shareMessage` uses a user-bound prepared message; this public viewer uses inline sharing instead.
 

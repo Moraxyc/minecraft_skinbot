@@ -42,9 +42,6 @@ msgstr "上传的皮肤"
 msgid "Shared skin"
 msgstr "分享的皮肤"
 
-msgid "Current player skin"
-msgstr "玩家当前皮肤"
-
 msgid "Link expires at {expires}. Send the PNG again after expiry."
 msgstr "链接于 {expires} 到期。到期后请重新发送 PNG。"
 
