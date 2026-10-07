@@ -7,6 +7,8 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from minecraft_skin_bot.cache import FileCache
+from minecraft_skin_bot.errors import UtilityError
+from minecraft_skin_bot.minecraft.models import Profile
 from minecraft_skin_bot.service import SkinService
 from minecraft_skin_bot.web import create_web_app
 from test_service import Provider, TextureProvider, settings, skin_bytes
@@ -113,3 +115,23 @@ async def test_snapshot_api_returns_the_shared_texture_after_player_changes(
     assert fixed["upload_expires_at"] is None
     assert fixed["uuid"] is None
     assert fixed["name"] == "Shared skin"
+
+
+async def test_public_rate_limit_response_carries_the_retry_delay(
+    api: tuple[TestClient[web.Request, web.Application], SkinService],
+) -> None:
+    client, service = api
+
+    class LimitedProvider(Provider):
+        async def get_profile(self, uuid: UUID) -> Profile:
+            raise UtilityError("Minecraft rate limited", "Retry later.", status=429, retry_after=5)
+
+    service.provider = LimitedProvider()
+    response = await client.get(
+        "/api/profile/069a79f444e94726a5befca90e38aaf5",
+        headers={"Origin": "https://viewer.example"},
+    )
+    assert response.status == 429
+    assert response.headers["Retry-After"] == "5"
+    assert response.headers["Access-Control-Expose-Headers"] == "Retry-After"
+    assert (await response.json())["error"] == "Minecraft rate limited"

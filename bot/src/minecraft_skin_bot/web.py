@@ -29,6 +29,8 @@ def create_web_app(
             response = web.json_response(
                 {"error": exc.title, "message": exc.message}, status=exc.status
             )
+            if exc.retry_after is not None:
+                response.headers["Retry-After"] = str(exc.retry_after)
         except TimeoutError:
             response = web.json_response(
                 {"error": "Service busy", "message": "Try again in a moment."}, status=503
@@ -44,6 +46,7 @@ def create_web_app(
         response.headers["Referrer-Policy"] = "no-referrer"
         if request.headers.get("Origin") == allowed_origin:
             response.headers["Access-Control-Allow-Origin"] = allowed_origin
+            response.headers["Access-Control-Expose-Headers"] = "Retry-After"
             response.headers["Vary"] = "Origin"
         return response
 

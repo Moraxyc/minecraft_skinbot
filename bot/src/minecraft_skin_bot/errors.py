@@ -8,6 +8,7 @@ class UtilityError(Exception):
         *,
         status: int = 400,
         params: dict[str, str] | None = None,
+        retry_after: int | None = None,
     ) -> None:
         super().__init__(title)
         self.title = title
@@ -15,3 +16,4 @@ class UtilityError(Exception):
         self.params = dict(params or {})
         self.message = message.format(**self.params) if self.params else message
         self.status = status
+        self.retry_after = retry_after

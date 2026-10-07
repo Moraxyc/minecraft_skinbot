@@ -12,6 +12,7 @@ import aiohttp
 import pytest
 from aiohttp import web
 from minecraft_skin_bot.errors import UtilityError
+from minecraft_skin_bot.minecraft import client as client_module
 from minecraft_skin_bot.minecraft.client import MojangProfileProvider, texture_url
 from minecraft_skin_bot.minecraft.models import SkinModel
 
@@ -24,6 +25,7 @@ class Harness:
     provider: MojangProfileProvider
     responses: dict[str, tuple[int, object]]
     calls: list[str]
+    headers: dict[str, dict[str, str]]
 
 
 @dataclass
@@ -35,6 +37,7 @@ class StreamBody:
 async def upstream() -> AsyncIterator[Harness]:
     responses: dict[str, tuple[int, object]] = {}
     calls: list[str] = []
+    headers: dict[str, dict[str, str]] = {}
 
     async def handle(request: web.Request) -> web.StreamResponse:
         calls.append(request.path)
@@ -48,8 +51,8 @@ async def upstream() -> AsyncIterator[Harness]:
         if body == "timeout":
             await asyncio.sleep(0.1)
         if isinstance(body, bytes):
-            return web.Response(status=status, body=body)
-        return web.json_response(body, status=status)
+            return web.Response(status=status, body=body, headers=headers.get(request.path))
+        return web.json_response(body, status=status, headers=headers.get(request.path))
 
     app = web.Application()
     app.router.add_get("/{path:.*}", handle)
@@ -76,7 +79,7 @@ async def upstream() -> AsyncIterator[Harness]:
                 )
 
         provider = MojangProfileProvider(cast(aiohttp.ClientSession, LocalSession()))
-        yield Harness(provider, responses, calls)
+        yield Harness(provider, responses, calls, headers)
         await provider.close()
     await runner.cleanup()
 
@@ -179,3 +182,78 @@ async def test_texture_download_rejects_invalid_png_and_oversized_chunked_body(
     with pytest.raises(UtilityError) as error:
         await upstream.provider.get_skin("https://textures.minecraft.net/texture/" + TEXTURE)
     assert error.value.status == 502
+
+
+@pytest.mark.parametrize("lookup", ["username", "profile"])
+async def test_missing_players_are_cached_briefly_then_can_be_found(
+    upstream: Harness, monkeypatch: pytest.MonkeyPatch, lookup: str
+) -> None:
+    now = [100.0]
+    monkeypatch.setattr(client_module, "monotonic", lambda: now[0])
+    path = (
+        "/users/profiles/minecraft/Notch"
+        if lookup == "username"
+        else f"/session/minecraft/profile/{NOTCH.hex}"
+    )
+    upstream.responses[path] = (404, {})
+
+    async def query() -> object:
+        return (
+            await upstream.provider.resolve_username("Notch")
+            if lookup == "username"
+            else await upstream.provider.get_profile(NOTCH)
+        )
+
+    for _ in range(2):
+        with pytest.raises(UtilityError) as missing:
+            await query()
+        assert missing.value.status == 404
+    assert upstream.calls.count(path) == 1
+    upstream.responses[path] = (
+        200,
+        {"id": NOTCH.hex, "name": "Notch"} if lookup == "username" else profile(),
+    )
+    now[0] = 131.0
+    assert await query() is not None
+    assert upstream.calls.count(path) == 2
+
+
+@pytest.mark.parametrize(
+    "retry_after,expected",
+    [
+        ("5", 5),
+        ("9999999999999999", 300),
+        ("bad", 30),
+        (None, 30),
+        ("Thu, 01 Jan 1970 00:16:45 GMT", 5),
+    ],
+)
+async def test_mojang_rate_limits_have_bounded_shared_cooldown_and_recover(
+    upstream: Harness, monkeypatch: pytest.MonkeyPatch, retry_after: str | None, expected: int
+) -> None:
+    now = [100.0]
+    monkeypatch.setattr(client_module, "monotonic", lambda: now[0])
+    monkeypatch.setattr(client_module, "time", lambda: 1000.0)
+    path = f"/session/minecraft/profile/{NOTCH.hex}"
+    other = UUID("12345678123456781234567812345678")
+    other_path = f"/session/minecraft/profile/{other.hex}"
+    upstream.responses[other_path] = (404, {})
+    upstream.responses[path] = (429, {})
+    if retry_after is not None:
+        upstream.headers[path] = {"Retry-After": retry_after}
+    with pytest.raises(UtilityError) as limited:
+        await upstream.provider.get_profile(NOTCH)
+    assert limited.value.status == 429
+    assert limited.value.retry_after == expected
+    with pytest.raises(UtilityError) as cooling:
+        await upstream.provider.get_profile(other)
+    assert cooling.value.status == 429
+    assert cooling.value.retry_after == expected
+    assert other_path not in upstream.calls
+    username_path = "/users/profiles/minecraft/Notch"
+    upstream.responses[username_path] = (200, {"id": NOTCH.hex, "name": "Notch"})
+    assert await upstream.provider.resolve_username("Notch") == NOTCH
+    now[0] += expected + 1
+    upstream.responses[path] = (200, profile())
+    assert (await upstream.provider.get_profile(NOTCH)).name == "Notch"
+    assert upstream.calls.count(path) == 2

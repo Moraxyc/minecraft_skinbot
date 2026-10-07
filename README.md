@@ -97,6 +97,8 @@ The same Python process receives updates through polling or an optional webhook 
 
 Content caches contain immutable textures, generated previews and Telegram media IDs. Their keys include the texture SHA-256, model, render type and renderer version. Concurrent requests share downloads, rendering and Telegram uploads. Profile lookups expire after 60 seconds so skin changes receive fresh texture references.
 
+Missing player responses are cached for 30 seconds. Mojang HTTP 429 responses start a cooldown for that upstream host, using `Retry-After` seconds or an HTTP date, capped at five minutes; absent or invalid values use 30 seconds. Requests during the cooldown receive an immediate rate-limit error with the remaining wait rather than sleeping. The public API returns HTTP 429 and a `Retry-After` header. Other upstream failures can be retried normally.
+
 Uploaded PNGs use content-addressed storage with a 24-hour default TTL. Uploading the same bytes renews that content's availability. Their viewer and inline links expire with the cached content; send the PNG again to renew them. Cache deletion causes profile content to be fetched and generated again, and uploaded content to be supplied again. Each request carries its complete UUID or content hash; operation relies on these content references.
 
 Upload cards and the viewer show the current content's expiration time. The API exposes it as `upload_expires_at`, a Unix timestamp in UTC derived from the stored file's modification time and upload TTL. Reading a link does not renew it. Profile responses use `null` for this field.
