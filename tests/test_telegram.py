@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, replace
@@ -8,6 +9,7 @@ from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
 import pytest
@@ -18,11 +20,13 @@ from aiogram.methods import (
     AnswerInlineQuery,
     EditMessageMedia,
     EditMessageText,
+    SendDocument,
     SendPhoto,
     SendRichMessage,
 )
 from aiogram.methods.base import TelegramMethod, TelegramType
 from aiogram.types import (
+    BufferedInputFile,
     CallbackQuery,
     Chat,
     Document,
@@ -69,6 +73,7 @@ from minecraft_skin_bot.telegram.inline import (
 )
 from minecraft_skin_bot.telegram.router import SkinMessages
 from PIL import Image
+from test_service import TextureProvider, skin_bytes
 
 PLAYER = UUID("069a79f4-44e9-4726-a5be-fca90e38aaf5")
 USER = User(id=789, is_bot=False, first_name="Test")
@@ -650,6 +655,106 @@ async def test_inline_answer_retries_only_when_telegram_wait_fits_its_response_b
     assert all(len(answer.results) == 4 for answer in answers)
 
 
+async def test_shared_texture_buttons_keep_the_original_skin_after_profile_change_and_cache_loss(
+    harness: Harness,
+) -> None:
+    provider = TextureProvider()
+    provider.cape = skin_bytes("yellow", height=32)
+    harness.service.provider = provider
+    original = await harness.service.resolve(PLAYER.hex)
+    assert original.snapshot_reference is not None
+    await harness.dispatcher().feed_update(
+        harness.bot, Update(update_id=1, message=message(text="Notch"))
+    )
+    sent = harness.session.calls[-1]
+    assert isinstance(sent, SendRichMessage) and sent.rich_message
+    buttons = [
+        button
+        for block in sent.rich_message.blocks or []
+        if isinstance(block, InputRichBlockButtons)
+        for button in block.buttons
+    ]
+    shared = next(button for button in buttons if button.text == "Share")
+    assert shared.switch_inline_query == original.snapshot_reference
+    assert len("view " + original.snapshot_reference) <= 256
+    opened = next(button for button in buttons if button.text == "Open 3D")
+    assert opened.web_app and parse_qs(urlsplit(opened.web_app.url).query)["texture"] == [
+        original.snapshot_reference.removeprefix("texture:")
+    ]
+    current = next(button for button in buttons if button.text == "Current player skin")
+    assert current.url == f"https://t.me/minecraft_skin_bot?start=r{PLAYER.hex}"
+    provider.color = "blue"
+    assert (await harness.service.resolve(PLAYER.hex)).skin != original.skin
+    shutil.rmtree(harness.service.cache.directory)
+    lookups = provider.profile_lookups
+    await harness.dispatcher().feed_update(harness.bot, inline_update(original.snapshot_reference))
+    answer = harness.session.calls[-1]
+    assert isinstance(answer, AnswerInlineQuery) and len(answer.results) == 4
+    assert provider.profile_lookups == lookups
+    cached_original = next(
+        call for call in harness.session.calls if call.__api_method__ == "sendDocument"
+    )
+    assert isinstance(cached_original, SendDocument)
+    assert isinstance(cached_original.document, BufferedInputFile)
+    assert cached_original.document.data == original.skin
+    assert answer.button and answer.button.web_app
+    texture = parse_qs(urlsplit(answer.button.web_app.url).query)["texture"][0]
+    reconstructed = await harness.service.resolve("texture:" + texture)
+    assert reconstructed.skin == original.skin and reconstructed.cape_url
+    assert all(
+        button.callback_data is None
+        for result in answer.results
+        for row in (result.reply_markup.inline_keyboard if result.reply_markup else [])
+        for button in row
+    )
+    shared_skin = answer.results[0]
+    assert isinstance(shared_skin, InlineQueryResultCachedPhoto)
+    assert isinstance(shared_skin.input_message_content, InputRichMessageContent)
+    assert all(
+        button.callback_data is None
+        for block in shared_skin.input_message_content.rich_message.blocks or []
+        if isinstance(block, InputRichBlockButtons)
+        for button in block.buttons
+    )
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        "r" + PLAYER.hex,
+        PLAYER.hex,
+        "uploaded",
+        "bad",
+        "r" + "a" * 31,
+        "../outside",
+        "r" + PLAYER.hex + " extra",
+    ],
+)
+async def test_start_links_query_valid_players_and_reject_invalid_parameters(
+    harness: Harness, parameter: str
+) -> None:
+    payload = parameter
+    if parameter == "uploaded":
+        asset = await harness.service.upload(harness.provider.png)
+        payload = action_reference(asset.reference)
+    await harness.dispatcher().feed_update(
+        harness.bot, Update(update_id=1, message=message(text="/start " + payload))
+    )
+    answer = harness.session.calls[-1]
+    if parameter in {"r" + PLAYER.hex, PLAYER.hex}:
+        assert isinstance(answer, SendRichMessage) and answer.rich_message
+        assert copy_button_paragraph(answer.rich_message.blocks or [])
+    elif parameter == "uploaded":
+        assert isinstance(answer, SendRichMessage) and answer.rich_message
+        assert any(
+            isinstance(block, InputRichBlockPhoto) for block in answer.rich_message.blocks or []
+        )
+    else:
+        assert answer.__api_method__ == "sendMessage"
+        assert "Invalid player" in getattr(answer, "text", "")
+    assert harness.provider.lookups == 0
+
+
 async def test_repeatedly_rejected_inline_media_degrades_instead_of_failing(
     harness: Harness,
 ) -> None:
@@ -857,6 +962,10 @@ def test_query_and_action_boundaries_and_caption_escaping() -> None:
     assert parse_query("skin " + PLAYER.hex) == SkinQuery(PLAYER.hex, "skin")
     assert parse_query("https://example.test/skin.png") is None
     assert parse_query("view Notch extra") is None
+    for token in ("c-" + "a" * 64, "s-" + "b" * 32 + "-" + "c" * 64):
+        assert parse_query("view texture:" + token) == SkinQuery("texture:" + token, "view")
+    for token in ("c-../outside", "c-" + "a" * 65, "x-" + "a" * 64):
+        assert parse_query("texture:" + token) is None
     for reference in (PLAYER.hex, "upload:" + "ab" * 32):
         action = "p:h:" + action_reference(reference)
         assert len(action.encode()) <= 64

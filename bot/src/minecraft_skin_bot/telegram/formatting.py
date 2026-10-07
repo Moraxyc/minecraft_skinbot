@@ -53,7 +53,9 @@ _SCOPE_PUBLIC = "public"
 
 
 def asset_name(asset: SkinAsset, locale: str | None = None) -> str:
-    return asset.name if asset.uuid else tr("Uploaded skin", locale)
+    if asset.uuid:
+        return asset.name
+    return tr("Uploaded skin" if asset.reference.startswith("upload:") else "Shared skin", locale)
 
 
 def upload_expiry(asset: SkinAsset, locale: str | None = None) -> str | None:
@@ -109,12 +111,26 @@ def parse_action(data: str) -> tuple[str, RenderKind, bool]:
 
 
 def mini_app_link(asset: SkinAsset, bot_username: str) -> str:
-    selector = (
-        action_reference(asset.reference)
-        if asset.reference.startswith("upload:")
-        else asset.reference
-    )
+    reference = asset.snapshot_reference or asset.reference
+    if reference.startswith("texture:"):
+        selector = "t-" + reference.removeprefix("texture:")
+    elif reference.startswith("upload:"):
+        selector = action_reference(reference)
+    else:
+        selector = reference
     return f"https://t.me/{bot_username}?startapp={selector}"
+
+
+def player_bot_link(uuid: UUID, bot_username: str) -> str:
+    return f"https://t.me/{bot_username}?start=r{uuid.hex}"
+
+
+def parse_start_reference(value: str) -> str:
+    if re.fullmatch(r"[0-9a-fA-F]{32}", value):
+        return UUID(value).hex
+    if re.fullmatch(r"r[0-9a-f]{32}|u[A-Za-z0-9_-]{43}", value):
+        return parse_action("p:f:" + value)[0]
+    raise ValueError("Invalid skin start parameter")
 
 
 def open_button(
@@ -156,7 +172,10 @@ def action_buttons(
     """Open the 3D viewer, share the skin, and copy the UUID where no paragraph shows it."""
     buttons = [
         open_button(asset, service, bot_username, private=private, locale=locale),
-        InlineKeyboardButton(text=tr("Share", locale), switch_inline_query=asset.reference),
+        InlineKeyboardButton(
+            text=tr("Share", locale),
+            switch_inline_query=asset.snapshot_reference or asset.reference,
+        ),
     ]
     if asset.uuid:
         buttons.append(
@@ -164,6 +183,13 @@ def action_buttons(
                 text=tr("Copy UUID", locale), copy_text=CopyTextButton(text=str(asset.uuid))
             )
         )
+        if asset.snapshot_reference:
+            buttons.append(
+                InlineKeyboardButton(
+                    text=tr("Current player skin", locale),
+                    url=player_bot_link(asset.uuid, bot_username),
+                )
+            )
     return buttons
 
 
@@ -187,6 +213,8 @@ def preview_markup(
     private: bool,
     locale: str | None = None,
 ) -> InlineKeyboardMarkup:
+    if asset.reference.startswith("texture:"):
+        return share_markup(asset, service, bot_username, private=private, locale=locale)
     rows = [
         [preview_button(asset, key, private=private, locale=locale) for key in keys]
         for keys in _VIEW_ROWS

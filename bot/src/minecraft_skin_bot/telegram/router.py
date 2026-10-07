@@ -14,7 +14,7 @@ from aiogram.exceptions import (
     TelegramNotFound,
     TelegramRetryAfter,
 )
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
@@ -36,6 +36,7 @@ from minecraft_skin_bot.skin.renderer import RenderKind
 from minecraft_skin_bot.telegram.formatting import (
     caption,
     parse_action,
+    parse_start_reference,
     preview_markup,
     rich_profile,
 )
@@ -319,7 +320,20 @@ def create_router(service: SkinService, settings: Settings, bot_username: str) -
 
     @router.channel_post(CommandStart(ignore_mention=True))
     @router.message(CommandStart(ignore_mention=True))
-    async def start(message: Message) -> None:
+    async def start(message: Message, bot: Bot, command: CommandObject) -> None:
+        if command.args:
+            try:
+                try:
+                    reference = parse_start_reference(command.args)
+                except ValueError as error:
+                    raise UtilityError(
+                        "Invalid player", "Open a skin link or send a Minecraft skin PNG."
+                    ) from error
+                asset = await service.resolve(reference)
+                await messages.send(bot, message, asset)
+            except UtilityError as error:
+                await message.answer(error_text(error), parse_mode="HTML")
+            return
         await message.answer(
             tr(
                 "<b>Minecraft Skin Bot</b>\n\n"

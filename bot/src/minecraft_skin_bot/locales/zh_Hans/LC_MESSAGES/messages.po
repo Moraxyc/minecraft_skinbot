@@ -39,6 +39,12 @@ msgstr "可在 3D 查看器中查看披风"
 msgid "Uploaded skin"
 msgstr "上传的皮肤"
 
+msgid "Shared skin"
+msgstr "分享的皮肤"
+
+msgid "Current player skin"
+msgstr "玩家当前皮肤"
+
 msgid "Link expires at {expires}. Send the PNG again after expiry."
 msgstr "链接于 {expires} 到期。到期后请重新发送 PNG。"
 
@@ -143,6 +149,12 @@ msgstr "找不到此 UUID 对应的 Minecraft 玩家。"
 
 msgid "Minecraft is unavailable"
 msgstr "Minecraft 服务暂不可用"
+
+msgid "Minecraft rate limited"
+msgstr "Minecraft 请求已被限流"
+
+msgid "Try the lookup again in {seconds} seconds."
+msgstr "请在 {seconds} 秒后重新查询。"
 
 msgid "Try the lookup again in a moment."
 msgstr "请稍后重新查询。"

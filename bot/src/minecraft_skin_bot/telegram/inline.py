@@ -23,7 +23,7 @@ from aiogram.types import (
 )
 
 from minecraft_skin_bot.config import Settings
-from minecraft_skin_bot.service import SkinAsset, SkinService
+from minecraft_skin_bot.service import TEXTURE_TOKEN, SkinAsset, SkinService
 from minecraft_skin_bot.skin.renderer import RenderKind
 from minecraft_skin_bot.telegram.formatting import (
     asset_name,
@@ -67,7 +67,10 @@ def parse_query(text: str) -> SkinQuery | None:
     if len(parts) != 1:
         return None
     reference = parts[0]
-    if not re.fullmatch(
+    valid_texture = reference.startswith("texture:") and TEXTURE_TOKEN.fullmatch(
+        reference.removeprefix("texture:")
+    )
+    if not valid_texture and not re.fullmatch(
         r"[A-Za-z0-9_]{3,16}|[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}|upload:[0-9a-f]{64}",
         reference,
     ):
