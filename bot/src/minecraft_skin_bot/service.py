@@ -32,6 +32,8 @@ class SkinAsset:
     content_hash: str
     skin: bytes
     cape_url: str | None
+    cape_unavailable: bool = False
+    upload_expires_at: float | None = None
 
 
 class SkinService:
@@ -54,11 +56,12 @@ class SkinService:
             digest = reference.removeprefix("upload:")
             if not CONTENT_HASH.fullmatch(digest):
                 raise UtilityError("Invalid skin", "Open a skin link or send a Minecraft skin PNG.")
-            data = await self.uploads.get(digest)
-            if data is None:
+            found = await self.uploads.get_with_expiry(digest)
+            if found is None:
                 raise UtilityError(
                     "Upload expired", "Send the skin PNG to the bot again.", status=410
                 )
+            data, expires_at = found
             try:
                 model = await asyncio.to_thread(self._model, data, SkinModel.UNKNOWN)
             except InvalidSkin as exc:
@@ -66,7 +69,16 @@ class SkinService:
                 raise UtilityError(
                     "Upload expired", "Send the skin PNG to the bot again.", status=410
                 ) from exc
-            return SkinAsset(reference, "Uploaded skin", None, model, digest, data, None)
+            return SkinAsset(
+                reference,
+                "Uploaded skin",
+                None,
+                model,
+                digest,
+                data,
+                None,
+                upload_expires_at=expires_at,
+            )
         uuid = (
             UUID(reference)
             if UUID_REFERENCE.fullmatch(reference)
@@ -90,17 +102,41 @@ class SkinService:
         digest = hashlib.sha256(data).hexdigest()
         await self.cache.put("skin:" + digest, data)
         cape_url = None
+        cape_unavailable = False
         cape_texture_url = profile.cape_url
         if cape_texture_url is not None:
-            cape = await self.cache.get_or_create(
-                "texture:" + cape_texture_url,
-                lambda: self.provider.get_skin(cape_texture_url),
-            )
-            await asyncio.to_thread(self._validate_cape, cape)
-            cape_hash = hashlib.sha256(cape).hexdigest()
-            await self.cache.put("cape:" + cape_hash, cape)
-            cape_url = self.settings.public_base_url + f"/api/cape/{cape_hash}.png"
-        return SkinAsset(uuid.hex, profile.name, uuid, model, digest, data, cape_url)
+
+            async def download_cape() -> bytes:
+                try:
+                    async with asyncio.timeout(3):
+                        return await self.provider.get_skin(cape_texture_url)
+                except TimeoutError as exc:
+                    raise UtilityError(
+                        "Cape unavailable",
+                        "The cape texture is temporarily unavailable.",
+                        status=502,
+                    ) from exc
+
+            try:
+                cape = await self.cache.get_or_create("texture:" + cape_texture_url, download_cape)
+                await asyncio.to_thread(self._validate_cape, cape)
+            except UtilityError:
+                cape_unavailable = True
+                await self.cache.delete("texture:" + cape_texture_url)
+            else:
+                cape_hash = hashlib.sha256(cape).hexdigest()
+                await self.cache.put("cape:" + cape_hash, cape)
+                cape_url = self.settings.public_base_url + f"/api/cape/{cape_hash}.png"
+        return SkinAsset(
+            uuid.hex,
+            profile.name,
+            uuid,
+            model,
+            digest,
+            data,
+            cape_url,
+            cape_unavailable=cape_unavailable,
+        )
 
     @staticmethod
     def _validate_cape(data: bytes) -> None:
@@ -130,8 +166,17 @@ class SkinService:
                 "Invalid skin", "Expected a 64×64 or 64×32 Minecraft skin PNG."
             ) from exc
         digest = hashlib.sha256(data).hexdigest()
-        await self.uploads.put(digest, data)
-        return SkinAsset("upload:" + digest, "Uploaded skin", None, model, digest, data, None)
+        expires_at = await self.uploads.put(digest, data)
+        return SkinAsset(
+            "upload:" + digest,
+            "Uploaded skin",
+            None,
+            model,
+            digest,
+            data,
+            None,
+            upload_expires_at=expires_at,
+        )
 
     def render_key(self, asset: SkinAsset, kind: RenderKind) -> str:
         return f"render:{asset.content_hash}:{asset.model}:{kind}:v{RENDERER_VERSION}"

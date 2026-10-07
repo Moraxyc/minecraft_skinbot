@@ -58,6 +58,8 @@ def create_web_app(
                 "skin_url": service.settings.public_base_url
                 + f"/api/skin/{asset.content_hash}.png",
                 "cape_url": asset.cape_url,
+                "cape_unavailable": asset.cape_unavailable,
+                "upload_expires_at": asset.upload_expires_at,
                 "reference": asset.reference,
                 "bot_username": bot_username,
             }

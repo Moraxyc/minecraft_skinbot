@@ -97,6 +97,8 @@ Content caches contain immutable textures, generated previews and Telegram media
 
 Uploaded PNGs use content-addressed storage with a 24-hour default TTL. Uploading the same bytes renews that content's availability. Their viewer and inline links expire with the cached content; send the PNG again to renew them. Cache deletion causes profile content to be fetched and generated again, and uploaded content to be supplied again. Each request carries its complete UUID or content hash; operation relies on these content references.
 
+Upload cards and the viewer show the current content's expiration time. The API exposes it as `upload_expires_at`, a Unix timestamp in UTC derived from the stored file's modification time and upload TTL. Reading a link does not renew it. Profile responses use `null` for this field.
+
 ## Telegram UX
 
 Bot API 10.3 Rich Messages provide a heading, image, compact profile details and embedded action buttons on supported clients. Telegram provides no public automatic client capability check. Send `skin Notch` for a standard photo message, or set `TELEGRAM_RICH_MESSAGES=false` for that layout throughout the bot, including Inline Skin. An unavailable Rich Message method also falls back to a photo. Initial upload previews use standard photos.
@@ -114,6 +116,8 @@ The Mini App uses `Telegram.WebApp.switchInlineQuery` (6.7+) for **Share Skin** 
 - Textures: `https://textures.minecraft.net/texture/<hash>`.
 
 These official endpoints were checked against live responses on 2026-10-05. Mojang provides limited public documentation for these Java Edition endpoints, so the implementation validates response identity and texture metadata. An absent model field on an official skin means Classic; `slim` means Slim; other metadata means Unknown. Unavailable public textures receive a concise error. Uploads retain an Unknown label unless the legacy format establishes Classic; both previews and the 3D viewer inspect modern arm geometry when model metadata is unavailable.
+
+An unavailable or invalid official cape leaves the skin available for preview, download and sharing. Cape downloads have a three-second budget. The API sets `cape_unavailable` when a declared cape cannot be loaded, and the viewer offers a retry. A profile without a declared cape has `cape_unavailable: false`.
 
 Texture downloads accept only the official CDN host and hash path, normalize HTTP references to HTTPS, reject redirects and enforce a 1 MiB limit. Uploaded PNGs require validated 64×64 or 64×32 dimensions before decoding. Cache paths are derived from hashes. The API exposes content PNGs and clean errors.
 

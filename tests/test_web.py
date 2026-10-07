@@ -35,6 +35,8 @@ async def test_viewer_profile_uses_public_content_urls_and_expected_cors(
     assert data["uuid"] == uuid
     assert data["reference"] == uuid
     assert data["model"] == "classic"
+    assert data["upload_expires_at"] is None
+    assert data["cape_unavailable"] is False
     assert data["bot_username"] == "runtime_skin_bot"
     assert response.headers["Access-Control-Allow-Origin"] == "https://viewer.example"
     media = await client.get(data["skin_url"].replace("https://api.example", ""))
@@ -54,6 +56,8 @@ async def test_expired_upload_and_invalid_public_paths_return_clean_errors(
     assert response.status == 200
     data = await response.json()
     assert data["reference"] == uploaded.reference
+    assert data["upload_expires_at"] == uploaded.upload_expires_at
+    assert response.headers["Cache-Control"] == "no-store"
     assert data["bot_username"] == "runtime_skin_bot"
     expired = await client.get("/api/upload/" + "0" * 64)
     assert expired.status == 410
@@ -83,5 +87,8 @@ async def test_missing_skin_and_cape_content_have_public_viewer_contracts(
     assert await cape.read() == provider.cape
     provider.cape = skin_bytes("yellow", height=64)
     invalid = await client.get(path)
-    assert invalid.status == 502
-    assert (await invalid.json())["error"] == "Cape unavailable"
+    assert invalid.status == 200
+    degraded = await invalid.json()
+    assert degraded["cape_url"] is None
+    assert degraded["cape_unavailable"] is True
+    assert degraded["skin_url"] == data["skin_url"]

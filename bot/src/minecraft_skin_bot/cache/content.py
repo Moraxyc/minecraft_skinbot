@@ -20,31 +20,41 @@ class FileCache:
     def _path(self, key: str) -> Path:
         return self.directory / hashlib.sha256(key.encode()).hexdigest()
 
-    def _read(self, key: str, ttl: int) -> bytes | None:
+    def _read(self, key: str, ttl: int) -> tuple[bytes, float] | None:
         path = self._path(key)
         try:
-            if time.time() - path.stat().st_mtime >= ttl:
-                path.unlink(missing_ok=True)
-                return None
-            return path.read_bytes()
+            with path.open("rb") as file:
+                expires_at = os.fstat(file.fileno()).st_mtime + ttl
+                if time.time() >= expires_at:
+                    path.unlink(missing_ok=True)
+                    return None
+                return file.read(), expires_at
         except FileNotFoundError:
             return None
 
     async def get(self, key: str, *, ttl: int | None = None) -> bytes | None:
+        found = await self.get_with_expiry(key, ttl=ttl)
+        return found[0] if found is not None else None
+
+    async def get_with_expiry(
+        self, key: str, *, ttl: int | None = None
+    ) -> tuple[bytes, float] | None:
         return await asyncio.to_thread(self._read, key, self.ttl if ttl is None else ttl)
 
-    def _write(self, key: str, data: bytes) -> None:
+    def _write(self, key: str, data: bytes) -> float:
         self.directory.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix=".write-", dir=self.directory)
         try:
             with os.fdopen(fd, "wb") as file:
                 file.write(data)
+            expires_at = Path(temporary).stat().st_mtime + self.ttl
             os.replace(temporary, self._path(key))
+            return expires_at
         finally:
             Path(temporary).unlink(missing_ok=True)
 
-    async def put(self, key: str, data: bytes) -> None:
-        await asyncio.to_thread(self._write, key, data)
+    async def put(self, key: str, data: bytes) -> float:
+        return await asyncio.to_thread(self._write, key, data)
 
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self._path(key).unlink, missing_ok=True)

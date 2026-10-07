@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import os
 import shutil
 from io import BytesIO
 from pathlib import Path
@@ -28,6 +29,7 @@ class Provider:
         self.downloads = 0
         self.has_skin = True
         self.cape: bytes | None = None
+        self.cape_error: Exception | None = None
 
     async def resolve_username(self, username: str) -> UUID:
         return PLAYER
@@ -43,6 +45,8 @@ class Provider:
 
     async def get_skin(self, url: str) -> bytes:
         self.downloads += 1
+        if url.startswith("cape:") and self.cape_error is not None:
+            raise self.cape_error
         await asyncio.sleep(0.01)
         return self.cape if url.startswith("cape:") and self.cape is not None else skin_bytes(url)
 
@@ -86,6 +90,17 @@ async def test_upload_reference_expires_and_original_remains_exact(tmp_path: Pat
     assert asset.model == SkinModel.CLASSIC
     assert await service.preview(asset, "skin") == original
     assert (await service.resolve(asset.reference)).skin == original
+    assert asset.upload_expires_at is not None
+    assert (await service.resolve(asset.reference)).upload_expires_at == asset.upload_expires_at
+    for path in service.uploads.directory.iterdir():
+        written_at = path.stat().st_mtime - 30
+        os.utime(path, (written_at, written_at))
+    aged = await service.resolve(asset.reference)
+    assert aged.upload_expires_at == asset.upload_expires_at - 30
+    renewed = await service.upload(original)
+    assert renewed.upload_expires_at is not None
+    assert renewed.upload_expires_at > aged.upload_expires_at
+    assert (await service.resolve(asset.reference)).upload_expires_at == renewed.upload_expires_at
     assert "upload=" + asset.content_hash in service.viewer_url(asset)
     await service.uploads.put(asset.content_hash, b"damaged cache file")
     with pytest.raises(UtilityError) as damaged:
@@ -98,3 +113,39 @@ async def test_upload_reference_expires_and_original_remains_exact(tmp_path: Pat
     with pytest.raises(UtilityError):
         await service.upload(b"invalid PNG")
     await service.close()
+
+
+@pytest.mark.parametrize(
+    "cape_error",
+    [
+        None,
+        UtilityError("CDN unavailable", "Retry", status=404),
+        TimeoutError(),
+        RuntimeError("bug"),
+    ],
+)
+async def test_failed_cape_preserves_skin_and_unexpected_failures_propagate(
+    tmp_path: Path, cape_error: Exception | None
+) -> None:
+    provider = Provider()
+    provider.cape = b"invalid cape"
+    provider.cape_error = cape_error
+    service = SkinService(provider, FileCache(tmp_path / "content"), settings(tmp_path))
+    try:
+        if isinstance(cape_error, RuntimeError):
+            with pytest.raises(RuntimeError, match="bug"):
+                await service.resolve(PLAYER.hex)
+            return
+        asset = await service.resolve(PLAYER.hex)
+        assert asset.skin == skin_bytes("red")
+        assert asset.cape_url is None
+        assert asset.cape_unavailable
+        assert await service.preview(asset, "skin") == asset.skin
+        assert await service.read_skin(asset.content_hash) == asset.skin
+        provider.cape = skin_bytes("blue", height=32)
+        provider.cape_error = None
+        recovered = await service.resolve(PLAYER.hex)
+        assert recovered.cape_url is not None
+        assert not recovered.cape_unavailable
+    finally:
+        await service.close()
