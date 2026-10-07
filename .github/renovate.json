@@ -4,7 +4,6 @@
     "github>Moraxyc/renovate-config"
   ],
   "automergeType": "pr",
-  "platformAutomerge": false,
   "ignoreTests": false,
   "minimumReleaseAge": "0 days",
   "lockFileMaintenance": {
