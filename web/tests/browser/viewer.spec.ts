@@ -208,7 +208,7 @@ test('keyboard camera controls and upload model overrides work while motion is p
   await page.keyboard.press('Space');
   expect((await canvas.screenshot()).equals(side)).toBe(false);
   await page.getByRole('button', { name: 'Front', exact: true }).click();
-  expect((await canvas.screenshot()).equals(front)).toBe(true);
+  await expect.poll(async () => (await canvas.screenshot()).equals(front)).toBe(true);
   await page.getByRole('button', { name: 'Zoom in', exact: true }).focus();
   await page.keyboard.press('Enter');
   expect((await canvas.screenshot()).equals(front)).toBe(false);
