@@ -3,8 +3,11 @@ import type { SkinProfile } from './api';
 
 export type AnimationName = 'idle' | 'walk' | 'run';
 
-async function textureImage(url: string): Promise<ImageBitmap> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(15_000), credentials: 'omit' });
+async function textureImage(url: string, signal?: AbortSignal): Promise<ImageBitmap> {
+  const response = await fetch(url, {
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+    credentials: 'omit',
+  });
   if (!response.ok) throw new Error('Texture unavailable');
   const blob = await response.blob();
   if (blob.size > 1_048_576 || blob.type !== 'image/png') throw new Error('Invalid texture');
@@ -34,19 +37,31 @@ export class Viewer {
     canvas.addEventListener('webglcontextlost', onContextLost);
   }
 
-  async load(profile: SkinProfile): Promise<void> {
-    const image = await textureImage(profile.skin_url);
+  async load(profile: SkinProfile, signal?: AbortSignal): Promise<{ capeUnavailable: boolean }> {
+    const image = await textureImage(profile.skin_url, signal);
     try {
+      signal?.throwIfAborted();
       if (image.width !== 64 || (image.height !== 64 && image.height !== 32)) throw new Error('Invalid skin');
       this.skin.loadSkin(image, {
         model: image.height === 32 ? 'default' : profile.model === 'slim' ? 'slim' : profile.model === 'classic' ? 'default' : 'auto-detect',
       });
     } finally { image.close(); }
+    let capeUnavailable = false;
     if (profile.cape_url) {
-      const cape = await textureImage(profile.cape_url);
-      try { this.skin.loadCape(cape); } finally { cape.close(); }
+      try {
+        const cape = await textureImage(profile.cape_url, signal);
+        try {
+          signal?.throwIfAborted();
+          this.skin.loadCape(cape);
+        } finally { cape.close(); }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        capeUnavailable = true;
+      }
     }
+    signal?.throwIfAborted();
     this.setAnimation('idle');
+    return { capeUnavailable };
   }
 
   setAnimation(name: AnimationName): void {

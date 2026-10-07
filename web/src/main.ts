@@ -22,8 +22,18 @@ const cleanupTelegram = initializeTelegram(app);
 const reference = parseReference(window.location.search, app?.initDataUnsafe?.start_param);
 const status = element('status');
 const controls = element<HTMLFieldSetElement>('controls');
+const sharing = element<HTMLFieldSetElement>('sharing');
+const retry = element<HTMLButtonElement>('retry');
+const notice = element('viewer-notice');
+const expiry = element('upload-expiry');
+let canvas = element<HTMLCanvasElement>('viewer');
 let botUsername = '';
 let viewer: Viewer | undefined;
+let viewerReady = false;
+let contextLost = false;
+let loading = false;
+let closed = false;
+let request: AbortController | undefined;
 
 function share(kind: 'skin' | 'view'): void {
   if (!reference || !botUsername) return;
@@ -42,31 +52,89 @@ function share(kind: 'skin' | 'view'): void {
 }
 
 async function start(): Promise<void> {
+  if (loading || closed) return;
   if (!reference) {
     if (window.location.search) status.textContent = t('invalidLink');
     return;
   }
+  loading = true;
+  request = new AbortController();
+  viewer?.dispose();
+  viewer = undefined;
+  viewerReady = false;
+  contextLost = false;
+  controls.disabled = true;
+  sharing.disabled = true;
+  botUsername = '';
+  retry.hidden = true;
+  retry.disabled = true;
+  notice.hidden = true;
+  expiry.hidden = true;
+  status.hidden = false;
   status.textContent = t('loading');
   try {
-    const profile = await loadProfile(reference, import.meta.env.VITE_API_BASE_URL || window.location.origin);
+    const profile = await loadProfile(reference, import.meta.env.VITE_API_BASE_URL || window.location.origin, request.signal);
+    if (closed) return;
     botUsername = profile.bot_username;
+    sharing.disabled = false;
     element('name').textContent = reference.kind === 'upload' ? t('uploadedSkin') : profile.name;
     element('details').textContent = `${t('model')}: ${t(profile.model)}${profile.cape_url ? ` · ${t('cape')}` : ''}`;
-    viewer = new Viewer(element<HTMLCanvasElement>('viewer'), element('stage'), () => {
+    if (profile.upload_expires_at !== null) {
+      const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'long' })
+        .format(new Date(profile.upload_expires_at * 1000));
+      expiry.textContent = `${t('uploadAvailableUntil')} ${date} · ${t('renewUpload')}`;
+      expiry.hidden = false;
+    }
+    // skinview3d attaches anonymous canvas listeners that dispose does not remove.
+    const nextCanvas = canvas.cloneNode(false) as HTMLCanvasElement;
+    canvas.replaceWith(nextCanvas);
+    canvas = nextCanvas;
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
+    viewer = new Viewer(canvas, element('stage'), () => {
+      if (canvas !== nextCanvas) return;
+      contextLost = true;
+      controls.disabled = true;
       status.hidden = false;
       status.textContent = t('restoring');
+      retry.hidden = false;
     });
-    element('viewer').addEventListener('webglcontextrestored', () => { status.hidden = true; });
-    await viewer.load(profile);
-    status.hidden = true;
-    controls.disabled = false;
+    const result = await viewer.load(profile, request.signal);
+    if (closed) return;
+    viewerReady = true;
+    viewer.skin.renderPaused = document.hidden;
+    for (const layer of ['inner', 'outer']) element<HTMLInputElement>(layer).checked = true;
+    for (const button of animationButtons) button.setAttribute('aria-pressed', String(button.dataset.animation === 'idle'));
+    if (profile.cape_unavailable || result.capeUnavailable) {
+      notice.textContent = t('capeUnavailable');
+      notice.hidden = false;
+    }
+    status.hidden = !contextLost;
+    controls.disabled = contextLost;
+    retry.hidden = !contextLost;
   } catch (error) {
+    if (closed) return;
     viewer?.dispose();
     viewer = undefined;
     status.textContent = t(error instanceof ViewerError ? error.code : 'viewerUnavailable');
+    retry.hidden = error instanceof ViewerError && ['uploadExpired', 'playerNotFound'].includes(error.code);
+  } finally {
+    loading = false;
+    request = undefined;
+    retry.disabled = false;
   }
 }
 
+function onContextRestored(event: Event): void {
+  if (event.target !== canvas) return;
+  contextLost = false;
+  if (viewer && viewerReady) {
+    status.hidden = true;
+    controls.disabled = false;
+    retry.hidden = true;
+  }
+}
+
+retry.addEventListener('click', () => { void start(); });
 element('reset').addEventListener('click', () => viewer?.reset());
 for (const layer of ['inner', 'outer'] as const) {
   const checkbox = element<HTMLInputElement>(layer);
@@ -95,5 +163,11 @@ element<HTMLAnchorElement>('share-fallback').addEventListener('click', (event) =
   }
 });
 document.addEventListener('visibilitychange', () => { if (viewer) viewer.skin.renderPaused = document.hidden; });
-window.addEventListener('pagehide', () => { viewer?.dispose(); cleanupTelegram(); }, { once: true });
+window.addEventListener('pagehide', () => {
+  closed = true;
+  request?.abort();
+  viewer?.dispose();
+  viewer = undefined;
+  cleanupTelegram();
+}, { once: true });
 void start();

@@ -13,11 +13,14 @@
         <p class="eyebrow" data-i18n="title">Minecraft Skin Viewer</p>
         <h1 id="name" data-i18n="heading">3D skin viewer</h1>
         <p id="details" data-i18n="openTelegramSkin" class="hint">Open a skin from Telegram.</p>
+        <p id="upload-expiry" class="hint" hidden></p>
       </header>
       <section id="stage" data-i18n-aria="stage" class="stage" aria-label="Interactive 3D skin">
         <canvas id="viewer" data-i18n-aria="canvas" aria-label="Drag to rotate. Pinch or scroll to zoom."></canvas>
         <p id="status" data-i18n="openBotSkin" class="status" role="status">Open a skin from the bot.</p>
       </section>
+      <button id="retry" data-i18n="retry" type="button" class="secondary retry" hidden>Retry</button>
+      <p id="viewer-notice" class="hint" role="status" hidden></p>
       <p class="hint gesture-hint" data-i18n="gestures">Drag to rotate · Pinch to zoom</p>
       <fieldset id="controls" disabled>
         <div class="toolbar">
@@ -33,6 +36,8 @@
           <button type="button" data-animation="walk" data-i18n="walk" aria-pressed="false" class="secondary">Walk</button>
           <button type="button" data-animation="run" data-i18n="run" aria-pressed="false" class="secondary">Run</button>
         </div>
+      </fieldset>
+      <fieldset id="sharing" disabled>
         <div class="sharing">
           <button id="share-skin" data-i18n="shareSkin" type="button">Share Skin</button>
           <button id="share-view" data-i18n="shareView" type="button" class="secondary">Share Three-view</button>

@@ -39,6 +39,8 @@ async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown'
         reference: upload ? `upload:${hash}` : uuid,
         skin_url: `${url.origin}/api/skin/${hash}.png`,
         cape_url: null,
+        cape_unavailable: false,
+        upload_expires_at: upload ? 2_100_000_000.5 : null,
         bot_username: botUsername,
       },
     });
@@ -135,9 +137,9 @@ test('real renderer respects explicit slim metadata, layers, reset, legacy conve
     stage.append(canvas);
     document.body.append(stage);
     const viewer = new Viewer(canvas, stage, () => {});
-    await viewer.load({ uuid, name: 'Skin', model: 'classic', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: null, bot_username: 'resolved_skin_bot' });
+    await viewer.load({ uuid, name: 'Skin', model: 'classic', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: null, cape_unavailable: false, upload_expires_at: null, bot_username: 'resolved_skin_bot' });
     const classicModel = viewer.skin.playerObject.skin.modelType;
-    await viewer.load({ uuid, name: 'Skin', model: 'slim', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: `${location.origin}/api/cape/${hash}.png`, bot_username: 'resolved_skin_bot' });
+    await viewer.load({ uuid, name: 'Skin', model: 'slim', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: `${location.origin}/api/cape/${hash}.png`, cape_unavailable: false, upload_expires_at: null, bot_username: 'resolved_skin_bot' });
     const model = viewer.skin.playerObject.skin.modelType;
     const capeVisible = viewer.skin.playerObject.cape.visible;
     viewer.setLayer('outer', false);
@@ -182,12 +184,66 @@ test('real renderer respects explicit slim metadata, layers, reset, legacy conve
   await expect(page.locator('#details')).toHaveText('Model: Unknown');
 });
 
-test('expired upload remains recoverable in the Mini App', async ({ page }) => {
+test('uploads display the server expiry and explain how to recover expired links', async ({ page }) => {
   await installFixtures(page);
+  await page.goto(`/?upload=${hash}`);
+  const expires = await page.evaluate(() => new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'long' }).format(new Date(2_100_000_000_500)));
+  await expect(page.locator('#upload-expiry')).toBeVisible();
+  await expect(page.locator('#upload-expiry')).toHaveText(`Available until ${expires} · Send the same PNG again to renew its links.`);
   await page.route(`**/api/upload/${hash}`, (route) => route.fulfill({ status: 410, json: { error: 'Upload expired' } }));
   await page.goto(`/?upload=${hash}`);
   await expect(page.locator('#status')).toHaveText('This upload has expired. Send the PNG to the bot again.');
   await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
+});
+
+test('retry recovers a profile outage and WebGL failure while sharing stays available', async ({ page }) => {
+  await installFixtures(page);
+  await page.addInitScript(() => {
+    const state = window as unknown as { webGLUnavailable: boolean };
+    state.webGLUnavailable = true;
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, contextId, options) {
+      if (state.webGLUnavailable && (contextId.startsWith('webgl') || contextId === 'experimental-webgl')) return null;
+      return getContext.call(this, contextId, options);
+    } as typeof getContext;
+  });
+  await page.route(`**/api/profile/${uuid}`, (route) => route.fulfill({ status: 503, json: { error: 'Unavailable' } }));
+  await page.goto(`/?uuid=${uuid}`);
+  await expect(page.locator('#status')).toHaveText('Skin service is busy. Try again.');
+  await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
+  await page.unroute(`**/api/profile/${uuid}`);
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.locator('#status')).toHaveText('The 3D viewer is unavailable. Try again.');
+  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Share Three-view' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Share Three-view' }).click();
+  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`view ${uuid}`);
+  await page.evaluate(() => { (window as unknown as { webGLUnavailable: boolean }).webGLUnavailable = false; });
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
+  await expect(page.locator('#status')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeHidden();
+  await page.getByRole('button', { name: 'Walk', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Walk', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('a failed optional cape retains a usable skin, including an upstream cape warning', async ({ page }) => {
+  await installFixtures(page, 'classic', false, 'zh-CN');
+  await page.route(`**/api/profile/${uuid}`, (route) => route.fulfill({
+    json: { uuid, name: 'Notch', model: 'classic', reference: uuid, skin_url: `${new URL(route.request().url()).origin}/api/skin/${hash}.png`, cape_url: `${new URL(route.request().url()).origin}/api/cape/${hash}.png`, cape_unavailable: false, upload_expires_at: null, bot_username: botUsername },
+  }));
+  await page.route(`**/api/cape/${hash}.png`, (route) => route.fulfill({ status: 503 }));
+  await page.goto(`/?uuid=${uuid}`);
+  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
+  await expect(page.locator('#viewer-notice')).toHaveText('披风暂不可用，仍可查看和分享皮肤。');
+  await page.getByRole('button', { name: '分享皮肤', exact: true }).click();
+  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin ${uuid}`);
+  await page.route(`**/api/profile/${uuid}`, (route) => route.fulfill({
+    json: { uuid, name: 'Notch', model: 'classic', reference: uuid, skin_url: `${new URL(route.request().url()).origin}/api/skin/${hash}.png`, cape_url: null, cape_unavailable: true, upload_expires_at: null, bot_username: botUsername },
+  }));
+  await page.goto(`/?uuid=${uuid}`);
+  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
+  await expect(page.locator('#viewer-notice')).toHaveText('披风暂不可用，仍可查看和分享皮肤。');
 });
 
 test('plain browser shares a selectable query and opens the documented bot link', async ({ page }) => {

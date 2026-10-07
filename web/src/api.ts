@@ -9,6 +9,8 @@ export interface SkinProfile {
   model: SkinModel;
   skin_url: string;
   cape_url: string | null;
+  cape_unavailable: boolean;
+  upload_expires_at: number | null;
   reference: string;
   bot_username: string;
 }
@@ -65,13 +67,13 @@ function assetURL(value: unknown, kind: 'skin' | 'cape', base: URL): string {
   return url.href;
 }
 
-export async function loadProfile(reference: SkinReference, apiBase: string): Promise<SkinProfile> {
+export async function loadProfile(reference: SkinReference, apiBase: string, signal?: AbortSignal): Promise<SkinProfile> {
   const base = new URL(apiBase.replace(/\/$/, '') + '/', window.location.origin);
   const path = reference.kind === 'upload' ? 'upload' : 'profile';
   let response: Response;
   try {
     response = await fetch(new URL(`api/${path}/${reference.id}`, base), {
-      signal: AbortSignal.timeout(15_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
       credentials: 'omit',
     });
   } catch {
@@ -88,6 +90,11 @@ export async function loadProfile(reference: SkinReference, apiBase: string): Pr
   if (typeof data.name !== 'string' || !['classic', 'slim', 'unknown'].includes(String(data.model))
     || typeof data.bot_username !== 'string' || !/^[a-z0-9_]{5,32}$/i.test(data.bot_username)
     || data.reference !== inlineReference(reference)
+    || typeof data.cape_unavailable !== 'boolean'
+    || (reference.kind === 'upload'
+      ? typeof data.upload_expires_at !== 'number' || data.upload_expires_at <= 0
+        || Number.isNaN(new Date(data.upload_expires_at * 1000).getTime())
+      : data.upload_expires_at !== null)
     || (reference.kind === 'profile' ? data.uuid !== reference.id : data.uuid !== null)) {
     throw new ViewerError('invalidData');
   }
@@ -97,6 +104,8 @@ export async function loadProfile(reference: SkinReference, apiBase: string): Pr
     model: data.model as SkinModel,
     skin_url: assetURL(data.skin_url, 'skin', base),
     cape_url: data.cape_url === null ? null : assetURL(data.cape_url, 'cape', base),
+    cape_unavailable: data.cape_unavailable,
+    upload_expires_at: data.upload_expires_at as number | null,
     reference: data.reference,
     bot_username: data.bot_username,
   };

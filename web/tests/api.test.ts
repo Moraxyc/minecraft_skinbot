@@ -4,7 +4,7 @@ import { inlineReference, loadProfile, parseReference } from '../src/api';
 const uuid = '069a79f444e94726a5befca90e38aaf5';
 const hash = 'a'.repeat(64);
 const reference = { kind: 'profile' as const, id: uuid };
-const profile = { uuid, reference: uuid, name: 'Notch', model: 'classic', skin_url: `https://skin.example/api/skin/${hash}.png`, cape_url: null, bot_username: 'resolved_skin_bot' };
+const profile = { uuid, reference: uuid, name: 'Notch', model: 'classic', skin_url: `https://skin.example/api/skin/${hash}.png`, cape_url: null, cape_unavailable: false, upload_expires_at: null, bot_username: 'resolved_skin_bot' };
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -56,12 +56,22 @@ describe('profile API boundary', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 410 })));
     await expect(loadProfile({ kind: 'upload', id: hash }, 'https://skin.example')).rejects.toThrow('Send the PNG to the bot again');
   });
+  it('retains the actual upload expiry and rejects invalid expiry data', async () => {
+    const upload = { ...profile, uuid: null, reference: `upload:${hash}`, upload_expires_at: 2_100_000_000.5 };
+    const reference = { kind: 'upload' as const, id: hash };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(upload))));
+    expect((await loadProfile(reference, 'https://skin.example')).upload_expires_at).toBe(2_100_000_000.5);
+    for (const upload_expires_at of [null, 0, '2030-01-01', 1e30]) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...upload, upload_expires_at }))));
+      await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Reopen the skin to load its data.');
+    }
+  });
   it.each([null, { uuid }, 'invalid'])('handles malformed provider data as a clean error', async (payload) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
     await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Reopen the skin to load its data.');
   });
   it('turns transport failure into concise retry guidance', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('raw network details')));
-    await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Skin service is busy. Reopen the skin to try again.');
+    await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Skin service is busy. Try again.');
   });
 });
