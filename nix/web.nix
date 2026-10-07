@@ -16,7 +16,7 @@ let
       ../web/tsconfig.json
       ../web/vite.config.ts
       ../web/playwright.config.ts
-      ../web/eslint.config.js
+      ../web/.oxlintrc.json
       (lib.fileset.fileFilter (file: file.hasExt "ts" || file.hasExt "css") ../web/src)
       (lib.fileset.fileFilter (file: file.hasExt "ts") ../web/tests)
     ];
