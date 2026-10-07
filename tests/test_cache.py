@@ -115,5 +115,8 @@ async def test_failed_atomic_upload_write_preserves_previous_bytes_and_expiratio
     with pytest.raises(OSError, match="Synthetic disk error"):
         await cache.put("upload", b"replacement")
     assert await cache.get_with_expiry("upload") == (b"original", expiry)
-    assert sum(path.stat().st_size for path in tmp_path.iterdir()) == len(b"original")
+    total_size = await asyncio.to_thread(
+        lambda: sum(path.stat().st_size for path in tmp_path.iterdir())
+    )
+    assert total_size == len(b"original")
     await cache.close()

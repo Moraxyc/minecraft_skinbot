@@ -104,7 +104,9 @@ class Settings:
                 webhook=webhook,
             )
         except ValueError as exc:
-            raise ValueError("Cache chat, port, upload TTL and cache budget must be valid integers.") from exc
+            raise ValueError(
+                "Cache chat, port, upload TTL and cache budget must be valid integers."
+            ) from exc
         if settings.cache_chat_id == 0 or abs(settings.cache_chat_id) >= 2**52:
             raise ValueError(
                 "Set TELEGRAM_CACHE_CHAT_ID to the target's full signed numeric chat ID."
