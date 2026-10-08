@@ -24,13 +24,18 @@ async def api(
     await service.close()
 
 
+@pytest.mark.parametrize(
+    "player",
+    ["069a79f444e94726a5befca90e38aaf5", "069A79F4-44E9-4726-A5BE-FCA90E38AAF5", "Notch", "notch"],
+)
 async def test_viewer_profile_uses_public_content_urls_and_expected_cors(
     api: tuple[TestClient[web.Request, web.Application], SkinService],
+    player: str,
 ) -> None:
     client, _ = api
     uuid = UUID("069a79f4-44e9-4726-a5be-fca90e38aaf5").hex
     response = await client.get(
-        f"/api/profile/{uuid}", headers={"Origin": "https://viewer.example"}
+        f"/api/profile/{player}", headers={"Origin": "https://viewer.example"}
     )
     data = await response.json()
     assert response.status == 200

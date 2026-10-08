@@ -1,4 +1,4 @@
-import { inlineReference, loadProfile, parseReference, ViewerError } from './api';
+import { inlineReference, loadProfile, parsePlayerInput, parseReference, ViewerError } from './api';
 import { localizeDocument, translator, viewerLocale } from './i18n';
 import { copyInlineQuery, getTelegram, initializeTelegram, shareInline } from './telegram';
 import { Viewer, type AnimationName, type CameraView, type PreviewModel } from './viewer';
@@ -11,15 +11,22 @@ function element<T extends HTMLElement>(id: string): T {
 }
 
 const app = getTelegram();
+const launchParams = new URLSearchParams(window.location.search);
 const locale = viewerLocale(
   app,
   navigator.languages.length ? navigator.languages : [navigator.language],
-  new URLSearchParams(window.location.search).get('lang'),
+  launchParams.get('lang'),
 );
 const t = translator(locale);
 localizeDocument(locale);
 const cleanupTelegram = initializeTelegram(app);
-const reference = parseReference(window.location.search, app?.initDataUnsafe?.start_param);
+let reference = parseReference(window.location.search, app?.initDataUnsafe?.start_param);
+const playerForm = element<HTMLFormElement>('player-form');
+const playerInput = element<HTMLInputElement>('player-input');
+const playerSubmit = element<HTMLButtonElement>('player-submit');
+const playerError = element('player-error');
+playerForm.hidden = reference !== null;
+if (!reference) element('details').textContent = t('enterPlayer');
 const status = element('status');
 const controls = element<HTMLFieldSetElement>('controls');
 const sharing = element<HTMLFieldSetElement>('sharing');
@@ -73,10 +80,14 @@ function share(kind: 'skin' | 'view'): void {
 async function start(): Promise<void> {
   if (loading || closed) return;
   if (!reference) {
-    if (window.location.search) status.textContent = t('invalidLink');
+    const hasLaunchReference = ['uuid', 'upload', 'texture', 'tgWebAppStartParam'].some((key) => launchParams.has(key))
+      || Boolean(app?.initDataUnsafe?.start_param);
+    status.textContent = t(hasLaunchReference ? 'invalidLink' : 'enterPlayer');
     return;
   }
   loading = true;
+  playerInput.disabled = true;
+  playerSubmit.disabled = true;
   request = new AbortController();
   viewer?.dispose();
   viewer = undefined;
@@ -95,6 +106,7 @@ async function start(): Promise<void> {
   try {
     const profile = await loadProfile(reference, import.meta.env.VITE_API_BASE_URL || window.location.origin, request.signal);
     if (closed) return;
+    if (reference.kind === 'profile') reference = { kind: 'profile', id: profile.reference };
     botUsername = profile.bot_username;
     sharing.disabled = false;
     // Fixed texture and upload links carry no player name, so the heading stays localized.
@@ -123,6 +135,7 @@ async function start(): Promise<void> {
     const result = await viewer.load(profile, request.signal);
     if (closed) return;
     viewerReady = true;
+    playerForm.hidden = true;
     updatePause();
     viewer.skin.renderPaused = document.hidden;
     for (const layer of ['inner', 'outer']) element<HTMLInputElement>(layer).checked = true;
@@ -146,6 +159,8 @@ async function start(): Promise<void> {
     loading = false;
     request = undefined;
     retry.disabled = false;
+    playerInput.disabled = false;
+    playerSubmit.disabled = false;
   }
 }
 
@@ -159,6 +174,24 @@ function onContextRestored(event: Event): void {
   }
 }
 
+playerForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (loading || closed) return;
+  const nextReference = parsePlayerInput(playerInput.value);
+  playerInput.setAttribute('aria-invalid', String(!nextReference));
+  playerError.hidden = nextReference !== null;
+  if (!nextReference) {
+    playerError.textContent = t('invalidPlayer');
+    playerInput.focus();
+    return;
+  }
+  reference = nextReference;
+  void start();
+});
+playerInput.addEventListener('input', () => {
+  playerInput.removeAttribute('aria-invalid');
+  playerError.hidden = true;
+});
 retry.addEventListener('click', () => { void start(); });
 element('reset').addEventListener('click', () => viewer?.reset());
 element('zoom-in').addEventListener('click', () => viewer?.zoom('in'));

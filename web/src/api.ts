@@ -16,8 +16,16 @@ export interface SkinProfile {
 }
 
 const uuidPattern = /^[a-f0-9]{32}$/i;
+const playerUUIDPattern = /^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i;
+const usernamePattern = /^[a-z0-9_]{3,16}$/i;
 const hashPattern = /^[a-f0-9]{64}$/i;
 const texturePattern = /^[csu]-[a-f0-9]{32,64}(?:-[a-f0-9]{32,64})?$/i;
+
+export function parsePlayerInput(value: string): SkinReference | null {
+  const id = value.trim();
+  if (playerUUIDPattern.test(id)) return { kind: 'profile', id: id.replaceAll('-', '').toLowerCase() };
+  return usernamePattern.test(id) ? { kind: 'profile', id } : null;
+}
 
 function textureReference(token: string): SkinReference | null {
   const id = token.toLowerCase();
@@ -97,13 +105,17 @@ export async function loadProfile(reference: SkinReference, apiBase: string, sig
   const data = value as Record<string, unknown>;
   if (typeof data.name !== 'string' || !['classic', 'slim', 'unknown'].includes(String(data.model))
     || typeof data.bot_username !== 'string' || !/^[a-z0-9_]{5,32}$/i.test(data.bot_username)
-    || data.reference !== inlineReference(reference)
+    || typeof data.reference !== 'string'
+    || data.reference !== (reference.kind === 'profile' ? data.uuid : inlineReference(reference))
     || typeof data.cape_unavailable !== 'boolean'
     || (reference.kind === 'upload'
       ? typeof data.upload_expires_at !== 'number' || data.upload_expires_at <= 0
         || Number.isNaN(new Date(data.upload_expires_at * 1000).getTime())
       : data.upload_expires_at !== null)
-    || (reference.kind === 'profile' ? data.uuid !== reference.id : data.uuid !== null)) {
+    || (reference.kind === 'profile'
+      ? typeof data.uuid !== 'string' || !uuidPattern.test(data.uuid)
+        || (uuidPattern.test(reference.id) ? data.uuid !== reference.id : data.name.toLowerCase() !== reference.id.toLowerCase())
+      : data.uuid !== null)) {
     throw new ViewerError('invalidData');
   }
   return {

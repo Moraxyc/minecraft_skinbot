@@ -6,6 +6,10 @@ const en = {
   title: 'Minecraft Skin Viewer',
   heading: '3D skin viewer',
   openTelegramSkin: 'Open a skin from Telegram.',
+  playerInput: 'Username or UUID',
+  viewSkin: 'View skin',
+  enterPlayer: 'Enter a Minecraft username or UUID to view the skin.',
+  invalidPlayer: 'Enter a Minecraft username (3–16 letters, numbers or underscores) or a valid UUID.',
   stage: 'Interactive 3D skin',
   canvas: 'Drag to rotate. Pinch or scroll to zoom.',
   openBotSkin: 'Open a skin from the bot.',
@@ -55,7 +59,7 @@ const en = {
   selectQuery: 'Select and copy the query, then paste it into your target Telegram chat.',
   serviceBusy: 'Skin service is busy. Try again.',
   uploadExpired: 'This upload has expired. Send the PNG to the bot again.',
-  playerNotFound: 'Player not found. Check the UUID.',
+  playerNotFound: 'Player not found. Check the username or UUID.',
   invalidData: 'Reopen the skin to load its data.',
 };
 
@@ -65,6 +69,10 @@ const zh: Record<MessageKey, string> = {
   title: 'Minecraft 皮肤查看器',
   heading: '3D 皮肤查看器',
   openTelegramSkin: '从 Telegram 打开皮肤。',
+  playerInput: '用户名或 UUID',
+  viewSkin: '查看皮肤',
+  enterPlayer: '输入 Minecraft 用户名或 UUID 查看皮肤。',
+  invalidPlayer: '请输入 Minecraft 用户名（3–16 位字母、数字或下划线）或有效的 UUID。',
   stage: '交互式 3D 皮肤',
   canvas: '拖动旋转，双指或滚动缩放。',
   openBotSkin: '从机器人打开皮肤。',
@@ -114,7 +122,7 @@ const zh: Record<MessageKey, string> = {
   selectQuery: '选中并复制查询，再粘贴到目标 Telegram 聊天。',
   serviceBusy: '皮肤服务繁忙，请重试。',
   uploadExpired: '上传已过期，请重新向机器人发送 PNG。',
-  playerNotFound: '找不到玩家，请检查 UUID。',
+  playerNotFound: '找不到玩家，请检查用户名或 UUID。',
   invalidData: '请重新打开皮肤以加载数据。',
 };
 

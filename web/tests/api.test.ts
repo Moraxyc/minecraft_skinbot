@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { inlineReference, loadProfile, parseReference } from '../src/api';
+import { inlineReference, loadProfile, parsePlayerInput, parseReference } from '../src/api';
 
 const uuid = '069a79f444e94726a5befca90e38aaf5';
 const hash = 'a'.repeat(64);
@@ -10,6 +10,21 @@ const profile = { uuid, reference: uuid, name: 'Notch', model: 'classic', skin_u
 afterEach(() => vi.unstubAllGlobals());
 
 describe('public content selectors', () => {
+  it.each([
+    ['  nOtCh  ', { kind: 'profile', id: 'nOtCh' }],
+    ['abc', { kind: 'profile', id: 'abc' }],
+    ['Player_123456789', { kind: 'profile', id: 'Player_123456789' }],
+    [`  ${uuid.toUpperCase()}  `, reference],
+    ['069A79F4-44E9-4726-A5BE-FCA90E38AAF5', reference],
+    ['', null],
+    ['ab', null],
+    ['a'.repeat(17), null],
+    ['../Notch', null],
+    ['not-a-username', null],
+    ['069a79f4--44e94726a5befca90e38aaf5', null],
+  ])('validates player input and normalizes UUIDs: %s', (input, expected) => {
+    expect(parsePlayerInput(input)).toEqual(expected);
+  });
   it.each([
     [`?uuid=069a79f4-44e9-4726-a5be-fca90e38aaf5`, undefined, reference],
     [`?tgWebAppStartParam=${uuid.toUpperCase()}`, undefined, reference],
@@ -40,6 +55,23 @@ describe('public content selectors', () => {
 });
 
 describe('profile API boundary', () => {
+  it('resolves a username to a canonical UUID without accepting another player', async () => {
+    const reference = { kind: 'profile' as const, id: 'nOtCh' };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(profile)));
+    vi.stubGlobal('fetch', fetcher);
+    const result = await loadProfile(reference, 'https://skin.example');
+    expect(result.uuid).toBe(uuid);
+    expect(result.reference).toBe(uuid);
+    expect(fetcher.mock.calls[0][0].href).toBe('https://skin.example/api/profile/nOtCh');
+    for (const payload of [
+      { ...profile, name: 'Steve' },
+      { ...profile, reference: 'nOtCh' },
+      { ...profile, uuid: 'not-a-uuid', reference: 'not-a-uuid' },
+    ]) {
+      fetcher.mockResolvedValue(new Response(JSON.stringify(payload)));
+      await expect(loadProfile(reference, 'https://skin.example')).rejects.toThrow('Reopen the skin to load its data.');
+    }
+  });
   it('retains the provider model and public cape while omitting credentials', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...profile, model: 'slim', cape_url: `https://skin.example/api/cape/${hash}.png` })));
     vi.stubGlobal('fetch', fetcher);

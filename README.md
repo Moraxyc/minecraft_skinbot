@@ -99,7 +99,7 @@ Content caches contain immutable textures, generated previews and Telegram media
 
 Missing player responses are cached for 30 seconds. Mojang HTTP 429 responses start a cooldown for that upstream host, using `Retry-After` seconds or an HTTP date, capped at five minutes; absent or invalid values use 30 seconds. Requests during the cooldown receive an immediate rate-limit error with the remaining wait rather than sleeping. The public API returns HTTP 429 and a `Retry-After` header. Other upstream failures can be retried normally.
 
-Uploaded PNGs use content-addressed storage with a 24-hour default TTL. Uploading the same bytes renews that content's availability. Their viewer and inline links expire with the cached content; send the PNG again to renew them. Cache deletion causes profile content to be fetched and generated again, and uploaded content to be supplied again. Each request carries its complete UUID or content hash; operation relies on these content references.
+Uploaded PNGs use content-addressed storage with a 24-hour default TTL. Uploading the same bytes renews that content's availability. Their viewer and inline links expire with the cached content; send the PNG again to renew them. Cache deletion causes profile content to be fetched and generated again, and uploaded content to be supplied again. Viewer links carry their complete UUID or content reference; manually entered usernames resolve to UUIDs.
 
 Upload cards and the viewer show the current content's expiration time. The API exposes it as `upload_expires_at`, a Unix timestamp in UTC derived from the stored file's modification time and upload TTL. Reading a link does not renew it. Profile responses use `null` for this field.
 
@@ -114,6 +114,8 @@ Inline Mode supplies Skin, Three-view, Head and Original Skin. Skin uses a cache
 Inline preparation has a six-second total budget and reserves two seconds for answering Telegram. Cached media remain usable while uncached results are prepared concurrently. Slow uploads or Telegram rate limits return the available results and a 3D viewer entry; the next query can reuse completed media. Telegram upload cooldowns avoid repeatedly calling a rate-limited method.
 
 Opening 3D or sharing a profile's skin uses its fixed texture reference. Preview callbacks on a UUID card continue to resolve that player's current skin and refresh the card's links together. A fixed texture card provides 3D and sharing actions without callbacks that exceed Telegram's 64-byte callback limit.
+
+Opening the Mini App without a skin reference shows a username or UUID form. It accepts Java Edition usernames and UUIDs with or without hyphens, resolves them through `/api/profile/<player>`, and uses the resolved UUID for sharing and retries. Invalid links also offer the form so a player can be entered directly.
 
 The Mini App uses `Telegram.WebApp.switchInlineQuery` (6.7+) for **Share Skin** and **Share Three-view**, with queries such as `skin <uuid>` and `view <uuid>`. Plain browser viewing offers a copyable inline query and a Telegram bot link. Telegram's `shareMessage` uses a user-bound prepared message; this public viewer uses inline sharing instead.
 

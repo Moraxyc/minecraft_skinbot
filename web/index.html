@@ -15,6 +15,14 @@
         <p id="details" data-i18n="openTelegramSkin" class="hint">Open a skin from Telegram.</p>
         <p id="upload-expiry" class="hint" hidden></p>
       </header>
+      <form id="player-form" class="player-form" novalidate hidden>
+        <label for="player-input" data-i18n="playerInput">Username or UUID</label>
+        <div class="player-entry">
+          <input id="player-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="player-error" required />
+          <button id="player-submit" data-i18n="viewSkin" type="submit">View skin</button>
+        </div>
+        <p id="player-error" class="hint" role="alert" hidden></p>
+      </form>
       <section id="stage" data-i18n-aria="stage" class="stage" aria-label="Interactive 3D skin">
         <canvas id="viewer" data-i18n-aria="canvas" aria-label="Drag to rotate. Pinch or scroll to zoom."></canvas>
         <p id="status" data-i18n="openBotSkin" class="status" role="status">Open a skin from the bot.</p>

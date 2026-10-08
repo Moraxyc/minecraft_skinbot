@@ -6,7 +6,8 @@ from urllib.parse import urlsplit
 from aiohttp import web
 
 from minecraft_skin_bot.errors import UtilityError
-from minecraft_skin_bot.service import SkinAsset, SkinService
+from minecraft_skin_bot.minecraft.client import USERNAME
+from minecraft_skin_bot.service import UUID_REFERENCE, SkinAsset, SkinService
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +75,11 @@ def create_web_app(
         return response
 
     async def profile(request: web.Request) -> web.Response:
-        reference = request.match_info["uuid"]
-        if len(reference) != 32 or any(c not in "0123456789abcdef" for c in reference):
-            raise UtilityError("Invalid player", "Use a valid Minecraft UUID.")
+        reference = request.match_info["player"]
+        if not (UUID_REFERENCE.fullmatch(reference) or USERNAME.fullmatch(reference)):
+            raise UtilityError(
+                "Invalid player", "Send a Minecraft username (3–16 characters) or UUID."
+            )
         return profile_json(await service.resolve(reference))
 
     async def upload(request: web.Request) -> web.Response:
@@ -100,7 +103,7 @@ def create_web_app(
     async def health(request: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
 
-    app.router.add_get("/api/profile/{uuid}", profile)
+    app.router.add_get("/api/profile/{player}", profile)
     app.router.add_get("/api/upload/{digest}", upload)
     app.router.add_get("/api/texture/{token}", texture)
     app.router.add_get("/api/skin/{digest}.png", skin)

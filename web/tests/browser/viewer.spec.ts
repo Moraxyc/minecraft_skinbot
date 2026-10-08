@@ -48,6 +48,46 @@ async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown'
   });
 }
 
+test('a launch without a skin reference accepts player input and shares the resolved UUID', async ({ page }) => {
+  await installFixtures(page);
+  const profileRequests: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/api/profile/')) profileRequests.push(path);
+  });
+  await page.route('**/api/profile/MissingPlayer', (route) => route.fulfill({ status: 404, json: { error: 'Player not found' } }));
+  await page.goto('/');
+  const input = page.getByRole('textbox', { name: 'Username or UUID' });
+  await expect(input).toBeVisible();
+  await expect(page.locator('#status')).toHaveText('Enter a Minecraft username or UUID to view the skin.');
+  await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
+  await input.fill('../Notch');
+  await input.press('Enter');
+  await expect(page.getByRole('alert')).toHaveText('Enter a Minecraft username (3–16 letters, numbers or underscores) or a valid UUID.');
+  expect(profileRequests).toEqual([]);
+  await input.fill('MissingPlayer');
+  await page.getByRole('button', { name: 'View skin', exact: true }).click();
+  await expect(page.locator('#status')).toHaveText('Player not found. Check the username or UUID.');
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
+  await input.fill('  nOtCh  ');
+  await input.press('Enter');
+  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
+  await expect(page.getByRole('heading', { name: 'Notch' })).toBeVisible();
+  await expect(input).toBeHidden();
+  await page.getByRole('button', { name: 'Share Skin', exact: true }).click();
+  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin ${uuid}`);
+  expect(profileRequests).toEqual(['/api/profile/MissingPlayer', '/api/profile/nOtCh']);
+
+  await page.goto('/?lang=en');
+  await expect(input).toBeVisible();
+  await expect(page.locator('#status')).toHaveText('Enter a Minecraft username or UUID to view the skin.');
+  await input.fill('069A79F4-44E9-4726-A5BE-FCA90E38AAF5');
+  await input.press('Enter');
+  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
+  expect(profileRequests.at(-1)).toBe(`/api/profile/${uuid}`);
+});
+
 test('a fixed texture link from the bot opens the viewer with its immutable identity', async ({ page }) => {
   await installFixtures(page, 'classic', false, 'zh-CN');
   const token = `c-${hash}`;
@@ -63,6 +103,7 @@ test('a fixed texture link from the bot opens the viewer with its immutable iden
   expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin texture:s-${hash}`);
   await page.goto(`/?texture=q-${hash}`);
   await expect(page.locator('#status')).toHaveText('从机器人打开有效的皮肤链接。');
+  await expect(page.getByRole('textbox', { name: '用户名或 UUID' })).toBeVisible();
 });
 
 test('mobile WebGL viewer loads, rotates, zooms, resizes, themes, and shares both launch paths', async ({ page }) => {
