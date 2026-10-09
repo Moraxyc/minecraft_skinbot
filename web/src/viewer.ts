@@ -1,20 +1,10 @@
 import { IdleAnimation, RunningAnimation, SkinViewer, WalkingAnimation } from 'skinview3d';
-import type { SkinProfile } from './api';
+import type { SkinSnapshot } from './snapshot';
+import { loadTexture } from './textures';
 
 export type AnimationName = 'idle' | 'walk' | 'run';
 export type CameraView = 'front' | 'side' | 'back';
 export type PreviewModel = 'auto' | 'classic' | 'slim';
-
-async function textureImage(url: string, signal?: AbortSignal): Promise<ImageBitmap> {
-  const response = await fetch(url, {
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
-    credentials: 'omit',
-  });
-  if (!response.ok) throw new Error('Texture unavailable');
-  const blob = await response.blob();
-  if (blob.size > 1_048_576 || blob.type !== 'image/png') throw new Error('Invalid texture');
-  return createImageBitmap(blob);
-}
 
 export class Viewer {
   readonly skin: SkinViewer;
@@ -40,31 +30,27 @@ export class Viewer {
     canvas.addEventListener('webglcontextlost', onContextLost);
   }
 
-  async load(profile: SkinProfile, signal?: AbortSignal): Promise<{ capeUnavailable: boolean; canOverrideModel: boolean }> {
-    const image = await textureImage(profile.skin_url, signal);
+  async load(profile: SkinSnapshot, image: ImageBitmap, signal: AbortSignal): Promise<{ capeUnavailable: boolean; canOverrideModel: boolean }> {
     const canOverrideModel = image.height === 64 && profile.model === 'unknown';
-    try {
-      signal?.throwIfAborted();
-      if (image.width !== 64 || (image.height !== 64 && image.height !== 32)) throw new Error('Invalid skin');
-      this.skin.loadSkin(image, {
-        model: image.height === 32 ? 'default' : profile.model === 'slim' ? 'slim' : profile.model === 'classic' ? 'default' : 'auto-detect',
-      });
-      this.detectedModel = this.skin.playerObject.skin.modelType;
-    } finally { image.close(); }
+    signal.throwIfAborted();
+    this.skin.loadSkin(image, {
+      model: image.height === 32 ? 'default' : profile.model === 'slim' ? 'slim' : profile.model === 'classic' ? 'default' : 'auto-detect',
+    });
+    this.detectedModel = this.skin.playerObject.skin.modelType;
     let capeUnavailable = false;
-    if (profile.cape_url) {
+    if (profile.capeURL) {
       try {
-        const cape = await textureImage(profile.cape_url, signal);
+        const { image: cape } = await loadTexture(profile.capeURL, 'cape', signal);
         try {
-          signal?.throwIfAborted();
+          signal.throwIfAborted();
           this.skin.loadCape(cape);
         } finally { cape.close(); }
       } catch (error) {
-        if (signal?.aborted) throw error;
+        if (signal.aborted) throw error;
         capeUnavailable = true;
       }
     }
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
     this.setAnimation('idle');
     return { capeUnavailable, canOverrideModel };
   }

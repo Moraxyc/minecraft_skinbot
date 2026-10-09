@@ -19,6 +19,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'npm run dev -- --port 4173',
+    env: { VITE_BOT_USERNAME: process.env.VIEWER_TEST_BOT_USERNAME ?? 'minecraft_skin_bot' },
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
   },

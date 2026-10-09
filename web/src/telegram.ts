@@ -1,6 +1,7 @@
 export interface TelegramWebApp {
   version: string;
   platform: string;
+  initData?: string;
   initDataUnsafe?: { start_param?: string; user?: { language_code?: string } };
   themeParams: Record<string, string | undefined>;
   colorScheme: 'light' | 'dark';
@@ -12,8 +13,39 @@ export interface TelegramWebApp {
   disableVerticalSwipes?(): void;
   switchInlineQuery?(query: string, types?: string[]): void;
   openTelegramLink?(url: string): void;
+  Serverless?: { call(name: string, input: Record<string, unknown>, callback: (error: EndpointCallError | null, result?: unknown) => void): void };
+  shareMessage?(id: string, callback: (sent: boolean) => void): void;
   onEvent(event: string, handler: () => void): void;
   offEvent(event: string, handler: () => void): void;
+}
+
+export interface EndpointCallError extends Error {
+  type?: string;
+  parameters?: { code?: string };
+}
+
+export function endpointsAvailable(app: TelegramWebApp | undefined): app is TelegramWebApp & { Serverless: NonNullable<TelegramWebApp['Serverless']> } {
+  return Boolean(app?.initData && app.Serverless);
+}
+
+export function callEndpoint<Result>(app: TelegramWebApp, name: string, input: Record<string, unknown>): Promise<Result> {
+  return new Promise((resolve, reject) => {
+    if (!endpointsAvailable(app)) {
+      reject(new Error('Open this Mini App in Telegram.'));
+      return;
+    }
+    const timeout = window.setTimeout(() => reject(new Error('The server did not respond. Try again.')), 20_000);
+    try {
+      app.Serverless.call(name, input, (error, result) => {
+        window.clearTimeout(timeout);
+        if (error) reject(error);
+        else resolve(result as Result);
+      });
+    } catch (error) {
+      window.clearTimeout(timeout);
+      reject(error);
+    }
+  });
 }
 
 declare global {
@@ -54,7 +86,7 @@ export function shareInline(app: TelegramWebApp | undefined, query: string): 'in
     try {
       app.switchInlineQuery(query, ['users', 'groups', 'channels']);
       return 'inline';
-    } catch { /* A launch context can reject switching; copyable query guidance remains available. */ }
+    } catch { /* Some launch contexts reject inline switching. */ }
   }
   return 'manual';
 }

@@ -6,10 +6,6 @@ const en = {
   title: 'Minecraft Skin Viewer',
   heading: '3D skin viewer',
   openTelegramSkin: 'Open a skin from Telegram.',
-  playerInput: 'Username or UUID',
-  viewSkin: 'View skin',
-  enterPlayer: 'Enter a Minecraft username or UUID to view the skin.',
-  invalidPlayer: 'Enter a Minecraft username (3–16 letters, numbers or underscores) or a valid UUID.',
   stage: 'Interactive 3D skin',
   canvas: 'Drag to rotate. Pinch or scroll to zoom.',
   openBotSkin: 'Open a skin from the bot.',
@@ -33,10 +29,9 @@ const en = {
   previewModel: 'Preview model',
   automatic: 'Automatic',
   previewModelOnly: 'Changes the 3D preview only.',
-  shareSkin: 'Share Skin',
-  shareView: 'Share Three-view',
+  share: 'Share',
   inlineQuery: 'Inline query',
-  copyQuery: 'Copy inline query',
+  copyQuery: 'Copy text',
   openTelegram: 'Open Telegram',
   manualShare: 'Copy this query and paste it into your target Telegram chat.',
   chooseChat: 'Choose a chat, then select the inline result.',
@@ -48,19 +43,25 @@ const en = {
   slim: 'Slim',
   unknown: 'Unknown',
   cape: 'Cape',
-  uploadedSkin: 'Uploaded skin',
   sharedSkin: 'Shared skin',
-  uploadAvailableUntil: 'Available until',
-  renewUpload: 'Send the same PNG again to renew its links.',
   capeUnavailable: 'Cape unavailable. You can still view and share the skin.',
   restoring: 'Restoring the 3D viewer…',
   viewerUnavailable: 'The 3D viewer is unavailable. Try again.',
   copied: 'Copied. Paste into your target Telegram chat.',
   selectQuery: 'Select and copy the query, then paste it into your target Telegram chat.',
-  serviceBusy: 'Skin service is busy. Try again.',
-  uploadExpired: 'This upload has expired. Send the PNG to the bot again.',
-  playerNotFound: 'Player not found. Check the username or UUID.',
-  invalidData: 'Reopen the skin to load its data.',
+  skinUnavailable: 'Skin unavailable. Check your connection and retry.',
+  invalidSkin: 'The official texture is not a supported Minecraft PNG.',
+  lookupLabel: 'Minecraft username or UUID',
+  editName: 'Change player',
+  lookupButton: 'Look up',
+  cancel: 'Cancel',
+  lookingUp: 'Looking up skin…',
+  preparingShare: 'Preparing your message…',
+  choosePreparedChat: 'Choose a chat to share this skin.',
+  shared: 'Skin shared.',
+  shareCancelled: 'Sharing cancelled.',
+  telegramRequired: 'Open this Mini App in Telegram to look up and share skins.',
+  serviceUnavailable: 'The skin service is unavailable. Try again.',
 };
 
 export type MessageKey = keyof typeof en;
@@ -69,10 +70,6 @@ const zh: Record<MessageKey, string> = {
   title: 'Minecraft 皮肤查看器',
   heading: '3D 皮肤查看器',
   openTelegramSkin: '从 Telegram 打开皮肤。',
-  playerInput: '用户名或 UUID',
-  viewSkin: '查看皮肤',
-  enterPlayer: '输入 Minecraft 用户名或 UUID 查看皮肤。',
-  invalidPlayer: '请输入 Minecraft 用户名（3–16 位字母、数字或下划线）或有效的 UUID。',
   stage: '交互式 3D 皮肤',
   canvas: '拖动旋转，双指或滚动缩放。',
   openBotSkin: '从机器人打开皮肤。',
@@ -96,10 +93,9 @@ const zh: Record<MessageKey, string> = {
   previewModel: '预览模型',
   automatic: '自动识别',
   previewModelOnly: '仅改变本页 3D 预览。',
-  shareSkin: '分享皮肤',
-  shareView: '分享三视图',
+  share: '分享',
   inlineQuery: '内联查询',
-  copyQuery: '复制内联查询',
+  copyQuery: '复制文本',
   openTelegram: '打开 Telegram',
   manualShare: '复制查询并粘贴到目标 Telegram 聊天。',
   chooseChat: '选择聊天，再选择内联结果。',
@@ -111,22 +107,29 @@ const zh: Record<MessageKey, string> = {
   slim: '纤细',
   unknown: '未知',
   cape: '披风',
-  uploadedSkin: '上传的皮肤',
   sharedSkin: '分享的皮肤',
-  uploadAvailableUntil: '有效期至',
-  renewUpload: '重新发送相同 PNG 可续期。',
   capeUnavailable: '披风暂不可用，仍可查看和分享皮肤。',
   restoring: '正在恢复 3D 查看器…',
   viewerUnavailable: '3D 查看器暂时无法使用，请重试。',
   copied: '已复制，请粘贴到目标 Telegram 聊天。',
   selectQuery: '选中并复制查询，再粘贴到目标 Telegram 聊天。',
-  serviceBusy: '皮肤服务繁忙，请重试。',
-  uploadExpired: '上传已过期，请重新向机器人发送 PNG。',
-  playerNotFound: '找不到玩家，请检查用户名或 UUID。',
-  invalidData: '请重新打开皮肤以加载数据。',
+  skinUnavailable: '皮肤暂不可用，请检查网络连接后重试。',
+  invalidSkin: '官方纹理不是支持的 Minecraft PNG。',
+  lookupLabel: 'Minecraft 用户名或 UUID',
+  editName: '更换玩家',
+  lookupButton: '查询',
+  cancel: '取消',
+  lookingUp: '正在查询皮肤…',
+  preparingShare: '正在准备分享消息…',
+  choosePreparedChat: '选择聊天以分享皮肤。',
+  shared: '已分享皮肤。',
+  shareCancelled: '已取消分享。',
+  telegramRequired: '请在 Telegram 中打开 Mini App，以查询和分享皮肤。',
+  serviceUnavailable: '皮肤服务暂不可用，请重试。',
 };
 
-function supportedLocale(language: string): Locale | undefined {
+function supportedLocale(language: unknown): Locale | undefined {
+  if (typeof language !== 'string') return undefined;
   const tag = language.replaceAll('_', '-').toLowerCase();
   const parts = tag.split('-');
   if (parts[0] === 'zh' && !parts.includes('hant')
@@ -139,9 +142,7 @@ export function viewerLocale(
   languages: readonly string[],
   requested?: string | null,
 ): Locale {
-  // Inline-mode buttons launch the Web App with empty or user-less initData, so the bot also
-  // passes the sender's language in the URL. Telegram's own language still wins whenever the
-  // client reports it, and a Web App launched inside Telegram never falls back to the browser.
+  // Inline launches can omit the user language; the bot supplies it in the URL.
   const signals = app
     ? [app.initDataUnsafe?.user?.language_code ?? '', requested ?? '']
     : [requested ?? '', ...languages];

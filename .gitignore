@@ -7,6 +7,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 /cache/
+/.tgcloud/
+/node_modules/
 web/node_modules/
 web/dist/
 web/test-results/

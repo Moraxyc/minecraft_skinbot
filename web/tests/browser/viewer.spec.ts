@@ -1,384 +1,275 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
-const uuid = '069a79f444e94726a5befca90e38aaf5';
-const hash = 'a'.repeat(64);
-const botUsername = 'resolved_skin_bot';
+const skinHash = 'a'.repeat(64);
+const capeHash = 'b'.repeat(64);
+const skinURL = `https://textures.minecraft.net/texture/${skinHash}`;
+const capeURL = `https://textures.minecraft.net/texture/${capeHash}`;
+const botUsername = 'minecraft_skin_bot';
 
-async function installFixtures(page: Page, model: 'classic' | 'slim' | 'unknown' = 'classic', legacy = false, language = 'en'): Promise<void> {
-  const png = await readFile(new URL(`./fixtures/${legacy ? 'legacy' : 'modern'}.png`, import.meta.url));
+async function installFixtures(page: Page, options: { legacy?: boolean; telegram?: boolean; language?: string; startParam?: string } = {}): Promise<Buffer> {
+  const png = await readFile(new URL(`./fixtures/${options.legacy ? 'legacy' : 'modern'}.png`, import.meta.url));
   const cape = await readFile(new URL('./fixtures/legacy.png', import.meta.url));
   await page.route('https://telegram.org/js/telegram-web-app.js', (route) => route.fulfill({ body: '', contentType: 'text/javascript' }));
-  await page.addInitScript((language) => {
-    const events = new Map<string, () => void>();
-    const app = {
-      platform: 'android', version: '10.3', colorScheme: 'dark',
-      initDataUnsafe: { user: { language_code: language } },
-      themeParams: { bg_color: '#17212b', text_color: '#ffffff', hint_color: '#aabbcc', secondary_bg_color: '#232e3c', button_color: '#2481cc', button_text_color: '#ffffff' },
-      safeAreaInset: { top: 24, right: 0, bottom: 16, left: 0 },
-      contentSafeAreaInset: { top: 20, right: 0, bottom: 0, left: 0 },
-      ready() {}, expand() {}, isVersionAtLeast() { return true; },
-      onEvent(name: string, callback: () => void) { events.set(name, callback); },
-      offEvent(name: string) { events.delete(name); },
-      switchInlineQuery(query: string, types: string[]) { Object.assign(window, { lastInline: { query, types } }); },
-      openTelegramLink(url: string) { Object.assign(window, { lastTelegramLink: url }); },
-    };
-    Object.assign(window, { Telegram: { WebApp: app }, telegramTestEvents: events });
-  }, language);
-  await page.route('**/api/**', async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.endsWith('.png')) {
-      await route.fulfill({ body: url.pathname.includes('/cape/') ? cape : png, contentType: 'image/png' });
-      return;
+  if (options.telegram) {
+    await page.addInitScript(({ language, startParam }) => {
+      const events = new Map<string, () => void>();
+      const app = {
+        platform: 'android', version: '10.3', colorScheme: 'dark', initData: '',
+        initDataUnsafe: { start_param: startParam, user: language ? { language_code: language } : undefined },
+        themeParams: { bg_color: '#17212b', text_color: '#ffffff', hint_color: '#aabbcc', secondary_bg_color: '#232e3c', button_color: '#2481cc', button_text_color: '#ffffff' },
+        safeAreaInset: { top: 24, right: 0, bottom: 16, left: 0 },
+        contentSafeAreaInset: { top: 20, right: 0, bottom: 0, left: 0 },
+        ready() {}, expand() {}, isVersionAtLeast() { return true; },
+        onEvent(name: string, callback: () => void) { events.set(name, callback); },
+        offEvent(name: string) { events.delete(name); },
+        switchInlineQuery(query: string, types: string[]) { Object.assign(window, { lastInline: { query, types } }); },
+        openTelegramLink(url: string) { Object.assign(window, { lastTelegramLink: url }); },
+        Serverless: { call() { throw new Error('WebAppServerlessInitDataUnavailable'); } },
+      };
+      Object.assign(window, { Telegram: { WebApp: app }, telegramTestEvents: events });
+    }, { language: options.language, startParam: options.startParam });
+  }
+  await page.route(skinURL, (route) => route.fulfill({ body: png, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.route(capeURL, (route) => route.fulfill({ body: cape, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' } }));
+  return png;
+}
+
+async function expectViewer(page: Page): Promise<void> {
+  await expect(page.getByRole('button', { name: 'Reset camera', exact: true })).toBeEnabled();
+  await expect(page.locator('#status')).toBeHidden();
+}
+
+for (const [view, width, height] of [['head', 384, 384], ['front', 384, 640], ['back', 384, 640], ['three-view', 1152, 672], ['3d', 0, 0]] as const) {
+  test(`bot URL starts the requested ${view} view`, async ({ page }) => {
+    await installFixtures(page);
+    await page.goto(`/?texture=c-${skinHash}&lang=en&view=${view}`);
+    await expectViewer(page);
+    const output = page.locator('#preview-output');
+    if (view === '3d') {
+      await expect(output).toBeHidden();
+      await expect(page.getByRole('link', { name: 'Download preview' })).toBeHidden();
+    } else {
+      await expect(page.getByRole('combobox', { name: 'Flat previews' })).toHaveValue(view);
+      await expect(output).toBeVisible();
+      await expect.poll(() => output.evaluate((image) => [(image as HTMLImageElement).naturalWidth, (image as HTMLImageElement).naturalHeight])).toEqual([width, height]);
+      await expect(page.getByRole('link', { name: 'Download preview' })).toHaveAttribute('download', `skin-${view}.png`);
     }
-    const upload = url.pathname.includes('/upload/');
-    const texture = url.pathname.includes('/texture/');
-    await route.fulfill({
-      json: {
-        uuid: upload || texture ? null : uuid,
-        name: texture ? 'Shared skin' : upload ? 'Uploaded skin' : 'Notch', model,
-        reference: texture ? `texture:${url.pathname.split('/').pop()}` : upload ? `upload:${hash}` : uuid,
-        skin_url: `${url.origin}/api/skin/${hash}.png`,
-        cape_url: null,
-        cape_unavailable: false,
-        upload_expires_at: upload ? 2_100_000_000.5 : null,
-        bot_username: botUsername,
-      },
-    });
   });
 }
 
-test('a launch without a skin reference accepts player input and shares the resolved UUID', async ({ page }) => {
+test('invalid or ambiguous view parameters fall back to a usable 3D viewer', async ({ page }) => {
   await installFixtures(page);
-  const profileRequests: string[] = [];
-  page.on('request', (request) => {
-    const path = new URL(request.url()).pathname;
-    if (path.startsWith('/api/profile/')) profileRequests.push(path);
+  for (const search of ['view=../../head', 'view=head&view=back']) {
+    await page.goto(`/?texture=c-${skinHash}&lang=en&${search}`);
+    await expectViewer(page);
+    await expect(page.getByRole('combobox', { name: 'Flat previews' })).toHaveValue('three-view');
+    await expect(page.locator('#preview-output')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Generate preview' })).toBeEnabled();
+  }
+});
+
+test('official Telegram initData with a numeric language still opens the viewer', async ({ page }) => {
+  test.skip(process.env.VIEWER_TEST_OFFICIAL_TELEGRAM !== '1', 'Run with VIEWER_TEST_OFFICIAL_TELEGRAM=1 for the official script network check.');
+  await installFixtures(page);
+  await page.route('https://telegram.org/js/telegram-web-app.js', async (route) => {
+    const response = await route.fetch({ timeout: 15_000 });
+    if (!response.ok()) throw new Error(`Official Telegram script HTTP ${response.status()}`);
+    await route.fulfill({ response });
   });
-  await page.route('**/api/profile/MissingPlayer', (route) => route.fulfill({ status: 404, json: { error: 'Player not found' } }));
+  const wire = new URLSearchParams({ user: JSON.stringify({ id: 1, first_name: 'Fixture', language_code: 123 }) });
+  const fragment = new URLSearchParams({ tgWebAppData: wire.toString(), tgWebAppVersion: '10.3', tgWebAppPlatform: 'android' });
+  for (const language of ['&lang=zh-Hans', '']) {
+    await page.goto(`/?texture=c-${skinHash}${language}#${fragment}`);
+    await expect(page.getByRole('button', { name: language ? '重置视角' : 'Reset camera', exact: true })).toBeEnabled();
+    expect(await page.evaluate(() => window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code)).toBe(123);
+    await expect(page.locator('#status')).toBeHidden();
+  }
+});
+
+for (const [model, legacy] of [['c', false], ['s', false], ['s', true]] as const) {
+  test(`direct browser renders ${model} ${legacy ? 'legacy' : 'modern'} texture and supports controls`, async ({ page }) => {
+    await installFixtures(page, { legacy });
+    await page.goto(`/?texture=${model}-${skinHash}`);
+    await expectViewer(page);
+    await expect(page.getByRole('heading', { name: 'Shared skin' })).toBeVisible();
+    const canvas = page.locator('#viewer');
+    const front = await canvas.screenshot();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    expect(await canvas.screenshot()).not.toEqual(front);
+    await page.getByRole('button', { name: 'Walk', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Walk', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByLabel('Outer', { exact: true }).uncheck();
+    await page.getByLabel('Inner', { exact: true }).uncheck();
+    await expect(page.getByLabel('Outer', { exact: true })).not.toBeChecked();
+    await page.getByRole('button', { name: 'Reset camera', exact: true }).click();
+    await page.setViewportSize({ width: 320, height: 568 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(page.getByRole('link', { name: 'Open official skin PNG' })).toHaveAttribute('href', skinURL);
+  });
+}
+
+test('Telegram URL and bridge start parameters work with empty initData, language and model overrides', async ({ page }) => {
+  await installFixtures(page, { telegram: true, startParam: `t-u-${skinHash}`, language: 'zh-CN' });
   await page.goto('/');
-  const input = page.getByRole('textbox', { name: 'Username or UUID' });
-  await expect(input).toBeVisible();
-  await expect(page.locator('#status')).toHaveText('Enter a Minecraft username or UUID to view the skin.');
-  await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
-  await input.fill('../Notch');
-  await input.press('Enter');
-  await expect(page.getByRole('alert')).toHaveText('Enter a Minecraft username (3–16 letters, numbers or underscores) or a valid UUID.');
-  expect(profileRequests).toEqual([]);
-  await input.fill('MissingPlayer');
-  await page.getByRole('button', { name: 'View skin', exact: true }).click();
-  await expect(page.locator('#status')).toHaveText('Player not found. Check the username or UUID.');
-  await expect(input).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
-  await input.fill('  nOtCh  ');
-  await input.press('Enter');
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
-  await expect(page.getByRole('heading', { name: 'Notch' })).toBeVisible();
-  await expect(input).toBeHidden();
-  await page.getByRole('button', { name: 'Share Skin', exact: true }).click();
-  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin ${uuid}`);
-  expect(profileRequests).toEqual(['/api/profile/MissingPlayer', '/api/profile/nOtCh']);
-
-  await page.goto('/?lang=en');
-  await expect(input).toBeVisible();
-  await expect(page.locator('#status')).toHaveText('Enter a Minecraft username or UUID to view the skin.');
-  await input.fill('069A79F4-44E9-4726-A5BE-FCA90E38AAF5');
-  await input.press('Enter');
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
-  expect(profileRequests.at(-1)).toBe(`/api/profile/${uuid}`);
-});
-
-test('a fixed texture link from the bot opens the viewer with its immutable identity', async ({ page }) => {
-  await installFixtures(page, 'classic', false, 'zh-CN');
-  const token = `c-${hash}`;
-  await page.goto(`/?texture=${token}`);
   await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
-  await expect(page.getByRole('heading', { name: '分享的皮肤' })).toBeVisible();
-  await page.getByRole('button', { name: '分享皮肤', exact: true }).click();
-  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin texture:${token}`);
-  await page.goto(`/?tgWebAppStartParam=t-s-${hash}`);
-  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
-  await expect(page.getByRole('heading', { name: '分享的皮肤' })).toBeVisible();
-  await page.getByRole('button', { name: '分享皮肤', exact: true }).click();
-  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin texture:s-${hash}`);
-  await page.goto(`/?texture=q-${hash}`);
-  await expect(page.locator('#status')).toHaveText('从机器人打开有效的皮肤链接。');
-  await expect(page.getByRole('textbox', { name: '用户名或 UUID' })).toBeVisible();
-});
-
-test('mobile WebGL viewer loads, rotates, zooms, resizes, themes, and shares both launch paths', async ({ page }) => {
-  await installFixtures(page);
-  await page.goto(`/?uuid=${uuid}`);
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
-  await expect(page.getByRole('heading', { name: 'Notch' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  expect(await page.locator('main').evaluate((element) => getComputedStyle(element).paddingTop)).toBe('60px');
-
-  const canvas = page.locator('#viewer');
-  const before = await canvas.screenshot();
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error('Canvas has no visible dimensions');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 10 });
-  await page.mouse.up();
-  await page.mouse.wheel(0, -120);
-  const rotated = await canvas.screenshot();
-  expect(rotated.equals(before)).toBe(false);
-  await page.getByRole('button', { name: 'Reset camera' }).click();
-  await page.getByRole('button', { name: 'Run', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Run', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await page.getByLabel('Outer', { exact: true }).uncheck();
-  await page.getByLabel('Inner', { exact: true }).uncheck();
-  expect((await canvas.screenshot()).equals(rotated)).toBe(false);
-  await page.setViewportSize({ width: 320, height: 568 });
-  await expect.poll(async () => canvas.evaluate((element) => (element as HTMLCanvasElement).width)).toBeLessThanOrEqual(288);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-
-  await page.evaluate(() => {
-    const state = window as unknown as { Telegram: { WebApp: { colorScheme: string; themeParams: { bg_color: string; text_color: string; secondary_bg_color: string } } }; telegramTestEvents: Map<string, () => void> };
-    state.Telegram.WebApp.colorScheme = 'light';
-    state.Telegram.WebApp.themeParams.bg_color = '#ffffff';
-    state.Telegram.WebApp.themeParams.text_color = '#202b36';
-    state.Telegram.WebApp.themeParams.secondary_bg_color = '#edf2f6';
-    state.telegramTestEvents.get('themeChanged')?.();
-  });
-  expect(await page.evaluate(() => getComputedStyle(document.body).color)).toBe('rgb(32, 43, 54)');
-  await page.getByRole('button', { name: 'Share Three-view' }).click();
-  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`view ${uuid}`);
-
-  await page.goto(`/?tgWebAppStartParam=u${Buffer.from(hash, 'hex').toString('base64url')}`);
-  await expect(page.getByRole('heading', { name: 'Uploaded skin' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Share Skin', exact: true }).click();
-  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin upload:${hash}`);
-  await page.evaluate(() => {
-    (window as unknown as { Telegram: { WebApp: { switchInlineQuery(): void } } }).Telegram.WebApp.switchInlineQuery = () => { throw new Error('WebAppInlineModeDisabled'); };
-  });
-  await page.getByRole('button', { name: 'Share Three-view' }).click();
-  await expect(page.getByLabel('Inline query', { exact: true })).toHaveValue(`@${botUsername} view upload:${hash}`);
-  await expect(page.getByRole('link', { name: 'Open Telegram' })).toHaveAttribute('href', `https://t.me/${botUsername}`);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-});
-
-test('Chinese Telegram language localizes the viewer and errors while preserving share identity', async ({ page }) => {
-  await installFixtures(page, 'slim', false, 'zh-CN');
-  await page.goto(`/?uuid=${uuid}`);
-  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
-  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-Hans');
-  await expect(page.getByRole('heading', { name: 'Notch' })).toBeVisible();
-  await expect(page.locator('#details')).toHaveText('模型: 纤细');
-  await expect(page.locator('#viewer')).toHaveAttribute('aria-label', '拖动旋转，双指或滚动缩放。');
-  await page.getByRole('button', { name: '分享三视图' }).click();
-  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`view ${uuid}`);
+  await expect(page.getByRole('combobox', { name: '预览模型' })).toBeVisible();
+  await page.getByRole('combobox', { name: '预览模型' }).selectOption('slim');
+  await page.getByRole('button', { name: '分享查看器' }).click();
+  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`view texture:u-${skinHash}`);
   await expect(page.locator('#share-status')).toHaveText('选择聊天，再选择内联结果。');
-  await page.evaluate(() => { if (window.Telegram?.WebApp) delete window.Telegram.WebApp.switchInlineQuery; });
+  expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--safe-top'))).toBe('44px');
+  await page.goto(`/?tgWebAppStartParam=t-s-${skinHash}`);
+  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
+  await expect(page.locator('#details')).toHaveText('模型: 纤细');
+  await expect(page.getByRole('combobox', { name: '预览模型' })).toBeHidden();
+});
+
+test('Inline launch with no user or initData and a URL language keeps the static viewer usable', async ({ page }) => {
+  await installFixtures(page, { telegram: true });
+  await page.goto(`/?texture=c-${skinHash}&lang=zh-Hans`);
+  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
   await page.getByRole('button', { name: '分享皮肤', exact: true }).click();
-  await expect(page.getByLabel('内联查询', { exact: true })).toHaveValue(`@${botUsername} skin ${uuid}`);
-  await expect(page.getByRole('link', { name: '打开 Telegram' })).toHaveAttribute('href', `https://t.me/${botUsername}`);
-  await expect(page.locator('#share-status')).toHaveText('复制查询并粘贴到目标 Telegram 聊天。');
-  await page.route(`**/api/upload/${hash}`, (route) => route.fulfill({ status: 410, json: { error: 'raw upstream detail' } }));
-  await page.goto(`/?upload=${hash}`);
-  await expect(page.locator('#status')).toHaveText('上传已过期，请重新向机器人发送 PNG。');
-  await expect(page.getByRole('button', { name: '分享三视图' })).toBeDisabled();
+  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin texture:c-${skinHash}`);
 });
 
-test('real renderer respects explicit slim metadata, layers, reset, legacy conversion, and touch controls', async ({ page }) => {
-  await installFixtures(page, 'slim');
-  await page.goto(`/?uuid=${uuid}`);
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
-  const result = await page.evaluate(async ({ uuid, hash }) => {
-    const modulePath = '/src/viewer.ts';
-    const { Viewer } = await import(modulePath);
-    const canvas = document.createElement('canvas');
-    const stage = document.createElement('div');
-    stage.style.cssText = 'width:240px;height:320px;';
-    stage.append(canvas);
-    document.body.append(stage);
-    const viewer = new Viewer(canvas, stage, () => {});
-    await viewer.load({ uuid, name: 'Skin', model: 'classic', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: null, cape_unavailable: false, upload_expires_at: null, bot_username: 'resolved_skin_bot' });
-    const classicModel = viewer.skin.playerObject.skin.modelType;
-    await viewer.load({ uuid, name: 'Skin', model: 'slim', reference: uuid, skin_url: `${location.origin}/api/skin/${hash}.png`, cape_url: `${location.origin}/api/cape/${hash}.png`, cape_unavailable: false, upload_expires_at: null, bot_username: 'resolved_skin_bot' });
-    const model = viewer.skin.playerObject.skin.modelType;
-    const capeVisible = viewer.skin.playerObject.cape.visible;
-    viewer.setLayer('outer', false);
-    const layersHidden = viewer.skin.playerObject.skin.head.outerLayer.visible === false;
-    viewer.setAnimation('walk');
-    const animation = viewer.skin.animation.constructor.name;
-    viewer.skin.camera.position.set(100, 12, 40);
-    viewer.reset();
-    const cameraReset = Math.abs(viewer.skin.camera.position.x) < 1e-6 && Math.abs(viewer.skin.camera.position.y) < 1e-6 && viewer.skin.camera.position.z > 0;
-    const distance = viewer.skin.camera.position.length();
-    viewer.zoom('in');
-    const zoomsIn = viewer.skin.camera.position.length() < distance;
-    viewer.zoom('out');
-    const zoomRestored = Math.abs(viewer.skin.camera.position.length() - distance) < 1e-6;
-    Object.assign(window, { verificationViewer: viewer });
-    canvas.id = 'touch-verification';
-    return { classicModel, model, capeVisible, layersHidden, animation, cameraReset, zoomsIn, zoomRestored, touchAction: canvas.style.touchAction };
-  }, { uuid, hash });
-  expect(result).toEqual({ classicModel: 'default', model: 'slim', capeVisible: true, layersHidden: true, animation: 'WalkingAnimation', cameraReset: true, zoomsIn: true, zoomRestored: true, touchAction: 'none' });
-
-  const touchCanvas = page.locator('#touch-verification');
-  await touchCanvas.scrollIntoViewIfNeeded();
-  const box = await touchCanvas.boundingBox();
-  if (!box) throw new Error('Touch canvas unavailable');
-  const session = await page.context().newCDPSession(page);
-  const startX = box.x + box.width / 2;
-  const startY = box.y + box.height / 2;
-  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: startX, y: startY }] });
-  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: startX + 60, y: startY }] });
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  expect(await page.evaluate(() => (window as unknown as { verificationViewer: { skin: { camera: { position: { x: number } } } } }).verificationViewer.skin.camera.position.x)).not.toBe(0);
-
-  const zoomBefore = await page.evaluate(() => {
-    const v = (window as unknown as { verificationViewer: { skin: { camera: { position: { length(): number } } } } }).verificationViewer;
-    return v.skin.camera.position.length();
-  });
-  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: startX - 20, y: startY }, { x: startX + 20, y: startY }] });
-  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: startX - 40, y: startY }, { x: startX + 40, y: startY }] });
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  const zoomAfter = await page.evaluate(() => (window as unknown as { verificationViewer: { skin: { camera: { position: { length(): number } } } } }).verificationViewer.skin.camera.position.length());
-  expect(zoomAfter).toBeLessThan(zoomBefore);
-  await session.detach();
-
-  await installFixtures(page, 'unknown', true);
-  await page.goto(`/?upload=${hash}`);
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
-  await expect(page.locator('#details')).toHaveText('Model: Unknown');
-  await expect(page.getByLabel('Preview model', { exact: true })).toBeHidden();
+test('empty and malformed links give guidance without requesting an untrusted texture', async ({ page }) => {
+  await installFixtures(page);
+  const textureRequests: string[] = [];
+  page.on('request', (request) => { if (request.url().includes('textures.minecraft.net')) textureRequests.push(request.url()); });
+  await page.goto('/');
+  await expect(page.locator('#status')).toHaveText('Open a skin from Telegram.');
+  await expect(page.getByRole('button', { name: 'Generate preview' })).toBeDisabled();
+  await page.goto('/?texture=https://attacker.example/skin.png');
+  await expect(page.locator('#status')).toHaveText('Open a valid skin link from the bot.');
+  await expect(page.locator('#sharing')).toBeDisabled();
+  await page.goto('/?tgWebAppStartParam=invalid&lang=zh-Hans');
+  await expect(page.locator('#status')).toHaveText('从机器人打开有效的皮肤链接。');
+  expect(textureRequests).toEqual([]);
 });
 
-test('keyboard camera controls and upload model overrides work while motion is paused', async ({ page }) => {
+test('temporary texture failure can retry while sharing remains available', async ({ page }) => {
+  const png = await installFixtures(page);
+  await page.route(skinURL, (route) => route.fulfill({ status: 503, headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.goto(`/?texture=c-${skinHash}`);
+  await expect(page.locator('#status')).toHaveText('Skin unavailable. Check your connection and retry.');
+  await expect(page.getByRole('button', { name: 'Generate preview' })).toBeDisabled();
+  await expect(page.locator('#sharing')).toBeEnabled();
+  await page.unroute(skinURL);
+  await page.route(skinURL, (route) => route.fulfill({ body: png, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expectViewer(page);
+});
+
+test('invalid PNG dimensions are rejected and a cape failure does not disable the skin', async ({ page }) => {
+  const png = await installFixtures(page);
+  const invalid = Buffer.from(png);
+  invalid.writeUInt32BE(2048, 16);
+  await page.route(skinURL, (route) => route.fulfill({ body: invalid, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.goto(`/?texture=c-${skinHash}`);
+  await expect(page.locator('#status')).toHaveText('The official texture is not a supported Minecraft PNG.');
+  await page.unroute(skinURL);
+  await page.route(skinURL, (route) => route.fulfill({ body: png, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.goto(`/?texture=c-${skinHash}-${capeHash}`);
+  await expectViewer(page);
+  await expect(page.locator('#viewer-notice')).toBeHidden();
+  await page.route(capeURL, (route) => route.fulfill({ status: 503, headers: { 'Access-Control-Allow-Origin': '*' } }));
+  await page.reload();
+  await expectViewer(page);
+  await expect(page.locator('#viewer-notice')).toHaveText('Cape unavailable. You can still view and share the skin.');
+  await expect(page.getByRole('button', { name: 'Generate preview' })).toBeEnabled();
+});
+
+test('lost WebGL context restores controls and respects reduced motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await installFixtures(page, 'unknown');
-  await page.goto(`/?upload=${hash}`);
+  await installFixtures(page);
+  await page.goto(`/?texture=c-${skinHash}`);
+  await expectViewer(page);
   await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
-  const canvas = page.locator('#viewer');
-  const front = await canvas.screenshot();
-  await page.waitForTimeout(160);
-  expect((await canvas.screenshot()).equals(front)).toBe(true);
-  await page.getByRole('button', { name: 'Side', exact: true }).focus();
-  await page.keyboard.press('Enter');
-  const side = await canvas.screenshot();
-  expect(side.equals(front)).toBe(false);
-  await page.getByRole('button', { name: 'Back', exact: true }).focus();
-  await page.keyboard.press('Space');
-  expect((await canvas.screenshot()).equals(side)).toBe(false);
-  await page.getByRole('button', { name: 'Front', exact: true }).click();
-  await expect.poll(async () => (await canvas.screenshot()).equals(front)).toBe(true);
-  await page.getByRole('button', { name: 'Zoom in', exact: true }).focus();
-  await page.keyboard.press('Enter');
-  expect((await canvas.screenshot()).equals(front)).toBe(false);
-  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
-  expect((await canvas.screenshot()).equals(front)).toBe(true);
-
-  const model = page.getByLabel('Preview model', { exact: true });
-  await model.selectOption('slim');
-  const slim = await canvas.screenshot();
-  await model.selectOption('classic');
-  expect((await canvas.screenshot()).equals(slim)).toBe(false);
-  await model.selectOption('auto');
-  expect((await canvas.screenshot()).equals(front)).toBe(true);
-  await expect(page.locator('#details')).toHaveText('Model: Unknown');
-
-  await page.getByRole('button', { name: 'Run', exact: true }).click();
-  await page.getByRole('button', { name: 'Resume', exact: true }).click();
-  const running = await canvas.screenshot();
-  await page.waitForTimeout(160);
-  expect((await canvas.screenshot()).equals(running)).toBe(false);
-  await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  const paused = await canvas.screenshot();
-  await page.waitForTimeout(160);
-  expect((await canvas.screenshot()).equals(paused)).toBe(true);
+  await page.evaluate(() => {
+    const canvas = document.getElementById('viewer') as HTMLCanvasElement;
+    const extension = canvas.getContext('webgl2')?.getExtension('WEBGL_lose_context');
+    if (!extension) throw new Error('Context loss extension unavailable');
+    Object.assign(window, { restoreViewerContext: () => extension.restoreContext() });
+    extension.loseContext();
+  });
+  await expect(page.locator('#status')).toHaveText('Restoring the 3D viewer…');
+  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Generate preview' })).toBeEnabled();
+  await page.evaluate(() => (window as unknown as { restoreViewerContext(): void }).restoreViewerContext());
+  await expectViewer(page);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toHaveAttribute('aria-pressed', 'false');
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await page.goto(`/?uuid=${uuid}`);
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
-  await expect(model).toBeHidden();
 });
 
-test('uploads display the server expiry and explain how to recover expired links', async ({ page }) => {
+test('plain browser shares a copyable Telegram query even when clipboard fails', async ({ page }) => {
   await installFixtures(page);
-  await page.goto(`/?upload=${hash}`);
-  const expires = await page.evaluate(() => new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'long' }).format(new Date(2_100_000_000_500)));
-  await expect(page.locator('#upload-expiry')).toBeVisible();
-  await expect(page.locator('#upload-expiry')).toHaveText(`Available until ${expires} · Send the same PNG again to renew its links.`);
-  await page.route(`**/api/upload/${hash}`, (route) => route.fulfill({ status: 410, json: { error: 'Upload expired' } }));
-  await page.goto(`/?upload=${hash}`);
-  await expect(page.locator('#status')).toHaveText('This upload has expired. Send the PNG to the bot again.');
-  await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
+  await page.goto(`/?texture=s-${skinHash}-${capeHash}`);
+  await expectViewer(page);
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() { return Promise.reject(new Error('Permission denied')); } } }));
+  await page.getByRole('button', { name: 'Share Viewer', exact: true }).click();
+  await expect(page.getByLabel('Inline query', { exact: true })).toHaveValue(`@${botUsername} view texture:s-${skinHash}-${capeHash}`);
+  await expect(page.getByRole('link', { name: 'Open Telegram' })).toHaveAttribute('href', `https://t.me/${botUsername}`);
+  await page.getByRole('button', { name: 'Copy text' }).click();
+  const input = page.getByLabel('Inline query', { exact: true });
+  expect(await input.evaluate((input) => (input as HTMLTextAreaElement).selectionEnd)).toBe(`@${botUsername} view texture:s-${skinHash}-${capeHash}`.length);
 });
 
-test('retry recovers a profile outage and WebGL failure while sharing stays available', async ({ page }) => {
-  await installFixtures(page);
+test('flat previews and original download remain usable without WebGL and reuse one skin fetch', async ({ page }) => {
+  const original = await installFixtures(page);
   await page.addInitScript(() => {
-    const state = window as unknown as { webGLUnavailable: boolean };
-    state.webGLUnavailable = true;
     const getContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, contextId, options) {
-      if (state.webGLUnavailable && (contextId.startsWith('webgl') || contextId === 'experimental-webgl')) return null;
-      return getContext.call(this, contextId, options);
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...options: unknown[]) {
+      if (type.includes('webgl')) return null;
+      return getContext.call(this, type as '2d', ...options);
     } as typeof getContext;
   });
-  await page.route(`**/api/profile/${uuid}`, (route) => route.fulfill({ status: 503, json: { error: 'Unavailable' } }));
-  await page.goto(`/?uuid=${uuid}`);
-  await expect(page.locator('#status')).toHaveText('Skin service is busy. Try again.');
-  await expect(page.getByRole('button', { name: 'Share Skin', exact: true })).toBeDisabled();
-  await page.unroute(`**/api/profile/${uuid}`);
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  let skinRequests = 0;
+  page.on('request', (request) => { if (request.url() === skinURL) skinRequests += 1; });
+  await page.goto(`/?texture=c-${skinHash}`);
   await expect(page.locator('#status')).toHaveText('The 3D viewer is unavailable. Try again.');
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Share Three-view' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Share Three-view' }).click();
-  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`view ${uuid}`);
-  await page.evaluate(() => { (window as unknown as { webGLUnavailable: boolean }).webGLUnavailable = false; });
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Reset camera' })).toBeEnabled();
-  await expect(page.locator('#status')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeHidden();
-  await page.getByRole('button', { name: 'Walk', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Walk', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Generate preview' })).toBeEnabled();
+  const output = page.locator('#preview-output');
+  for (const [kind, width, height] of [['head', 384, 384], ['front', 384, 640], ['back', 384, 640], ['three-view', 1152, 672]] as const) {
+    await page.getByRole('combobox', { name: 'Flat previews' }).selectOption(kind);
+    await page.getByRole('button', { name: 'Generate preview' }).click();
+    await expect(output).toBeVisible();
+    await expect.poll(() => output.evaluate((image) => [(image as HTMLImageElement).naturalWidth, (image as HTMLImageElement).naturalHeight])).toEqual([width, height]);
+    const colors = await output.evaluate((image) => {
+      const bitmap = image as HTMLImageElement;
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.naturalWidth;
+      canvas.height = bitmap.naturalHeight;
+      const context = canvas.getContext('2d')!;
+      context.drawImage(bitmap, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const colors = new Set<string>();
+      for (let offset = 0; offset < pixels.length; offset += 4) colors.add(`${pixels[offset]},${pixels[offset + 1]},${pixels[offset + 2]},${pixels[offset + 3]}`);
+      return colors.size;
+    });
+    expect(colors).toBeGreaterThan(2);
+    await expect(page.getByRole('link', { name: 'Download preview' })).toHaveAttribute('download', `skin-${kind}.png`);
+  }
+  const previewDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Download preview' }).click();
+  const previewDownload = await previewDownloadPromise;
+  const preview = await readFile((await previewDownload.path())!);
+  expect(preview.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  expect([preview.readUInt32BE(16), preview.readUInt32BE(20)]).toEqual([1152, 672]);
+  const originalDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Download original skin' }).click();
+  const originalDownload = await originalDownloadPromise;
+  expect(await readFile((await originalDownload.path())!)).toEqual(original);
+  expect(skinRequests).toBe(1);
 });
 
-test('a failed optional cape retains a usable skin, including an upstream cape warning', async ({ page }) => {
-  await installFixtures(page, 'classic', false, 'zh-CN');
-  await page.route(`**/api/profile/${uuid}`, (route) => route.fulfill({
-    json: { uuid, name: 'Notch', model: 'classic', reference: uuid, skin_url: `${new URL(route.request().url()).origin}/api/skin/${hash}.png`, cape_url: `${new URL(route.request().url()).origin}/api/cape/${hash}.png`, cape_unavailable: false, upload_expires_at: null, bot_username: botUsername },
-  }));
-  await page.route(`**/api/cape/${hash}.png`, (route) => route.fulfill({ status: 503 }));
-  await page.goto(`/?uuid=${uuid}`);
-  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
-  await expect(page.locator('#viewer-notice')).toHaveText('披风暂不可用，仍可查看和分享皮肤。');
-  await page.getByRole('button', { name: '分享皮肤', exact: true }).click();
-  expect(await page.evaluate(() => (window as unknown as { lastInline: { query: string } }).lastInline.query)).toBe(`skin ${uuid}`);
-  await page.route(`**/api/profile/${uuid}`, (route) => route.fulfill({
-    json: { uuid, name: 'Notch', model: 'classic', reference: uuid, skin_url: `${new URL(route.request().url()).origin}/api/skin/${hash}.png`, cape_url: null, cape_unavailable: true, upload_expires_at: null, bot_username: botUsername },
-  }));
-  await page.goto(`/?uuid=${uuid}`);
-  await expect(page.getByRole('button', { name: '重置视角' })).toBeEnabled();
-  await expect(page.locator('#viewer-notice')).toHaveText('披风暂不可用，仍可查看和分享皮肤。');
-});
-
-test('plain browser shares a selectable query and opens the documented bot link', async ({ page }) => {
+test('an unconfigured viewer still renders and offers the original skin download', async ({ page }) => {
+  test.skip(process.env.VIEWER_TEST_BOT_USERNAME !== '', 'Run with VIEWER_TEST_BOT_USERNAME="".');
   await installFixtures(page);
-  await page.route('https://telegram.org/js/telegram-web-app.js', (route) => route.fulfill({ body: 'delete window.Telegram;', contentType: 'text/javascript' }));
-  await page.goto(`/?upload=${hash}`);
-  await expect(page.getByRole('button', { name: 'Share Three-view' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Share Three-view' }).click();
-  const input = page.getByLabel('Inline query', { exact: true });
-  await expect(input).toHaveValue(`@${botUsername} view upload:${hash}`);
-  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText() { return Promise.reject(new Error('Permission denied')); } } }));
-  await page.getByRole('button', { name: 'Copy inline query' }).click();
-  await expect(page.locator('#share-status')).toHaveText('Select and copy the query, then paste it into your target Telegram chat.');
-  expect(await input.evaluate((element) => (element as HTMLTextAreaElement).selectionEnd)).toBe(`@${botUsername} view upload:${hash}`.length);
-  await page.setViewportSize({ width: 320, height: 568 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.route(`https://t.me/${botUsername}`, (route) => route.fulfill({ body: 'Telegram bot handoff', contentType: 'text/plain' }));
-  await page.getByRole('link', { name: 'Open Telegram' }).click();
-  await page.waitForURL(`https://t.me/${botUsername}`);
-  expect(page.url()).toBe(`https://t.me/${botUsername}`);
+  await page.goto(`/?texture=c-${skinHash}`);
+  await expectViewer(page);
+  await expect(page.getByRole('link', { name: 'Download original skin' })).toBeVisible();
+  await expect(page.locator('#share-skin')).toBeHidden();
 });

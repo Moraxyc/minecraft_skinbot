@@ -1,0 +1,445 @@
+{
+  "provenance": {
+    "sourceCommit": "233f810b843dc75e2645aac5fd14d576ed9c5e01",
+    "oracle": "Pillow 12.3.0 / FreeType 2.14.3 historical parser and renderer",
+    "comparison": "Normalized RGBA hashes and opaque preview RGB hashes",
+    "sourceSha256": {
+      "parser.py": "0669faffa8fd1213fd519102d7da3bdf9639910d2cffb8f2f108ca59144d0dce",
+      "renderer.py": "a00f1b1eff5030f50c7bff3e083dee88f1349f4f24a6ca9c1e1e8399b8d45b69"
+    }
+  },
+  "cases": [
+    {
+      "name": "64-coordinates-classic",
+      "height": 64,
+      "model": "classic",
+      "renderModel": "classic",
+      "legacy": false,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "546755735d663e2a59c11924083e8155e495a17020348bc2450b4d93543f5fa5"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "d58c97fbb9cd69bf12168eb9ddbb56031d7de25645d8c1a5c389a95029c77960"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "98095094644099185b424af3db18318555af2d192b04e0b2300684747b50b9f9"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "c4a6ac4011e7bf0b190961d9a3f0a8caa44bda2a33b3641120a86d3628883e00"
+        }
+      ],
+      "pattern": "coordinates",
+      "inputSha256": "ec2c7475bfbd156bc98643d190b8a912d873af3711348c856df4bfb01341e114",
+      "normalizedSha256": "ec2c7475bfbd156bc98643d190b8a912d873af3711348c856df4bfb01341e114"
+    },
+    {
+      "name": "64-coordinates-slim",
+      "height": 64,
+      "model": "slim",
+      "renderModel": "slim",
+      "legacy": false,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "546755735d663e2a59c11924083e8155e495a17020348bc2450b4d93543f5fa5"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "38d6eb2a881924eafba04aec18c3a09ca351016e32dfb0d286fe71996551b65c"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "b371232f17b1e8545ff02115338d153a0beb941c7e2da34b4e2cc6f4055945b0"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "31e9492c4d4dd3702fff70ec9ff5e94e29654d34404ad82f6bfcf407c25c7516"
+        }
+      ],
+      "pattern": "coordinates",
+      "inputSha256": "ec2c7475bfbd156bc98643d190b8a912d873af3711348c856df4bfb01341e114",
+      "normalizedSha256": "ec2c7475bfbd156bc98643d190b8a912d873af3711348c856df4bfb01341e114"
+    },
+    {
+      "name": "64-opaque-classic",
+      "height": 64,
+      "model": "classic",
+      "renderModel": "classic",
+      "legacy": false,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "546755735d663e2a59c11924083e8155e495a17020348bc2450b4d93543f5fa5"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "d58c97fbb9cd69bf12168eb9ddbb56031d7de25645d8c1a5c389a95029c77960"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "98095094644099185b424af3db18318555af2d192b04e0b2300684747b50b9f9"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "c4a6ac4011e7bf0b190961d9a3f0a8caa44bda2a33b3641120a86d3628883e00"
+        }
+      ],
+      "pattern": "opaque",
+      "inputSha256": "6ba0350235d72814c22d23ff614de8600ec69eb69ef4b3f64ffd875c0c9a0d8e",
+      "normalizedSha256": "289d254ba3b21276e921f80336de6c72243e33d52448858add62a431dadf23ee"
+    },
+    {
+      "name": "64-opaque-slim",
+      "height": 64,
+      "model": "slim",
+      "renderModel": "slim",
+      "legacy": false,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "546755735d663e2a59c11924083e8155e495a17020348bc2450b4d93543f5fa5"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "38d6eb2a881924eafba04aec18c3a09ca351016e32dfb0d286fe71996551b65c"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "b371232f17b1e8545ff02115338d153a0beb941c7e2da34b4e2cc6f4055945b0"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "31e9492c4d4dd3702fff70ec9ff5e94e29654d34404ad82f6bfcf407c25c7516"
+        }
+      ],
+      "pattern": "opaque",
+      "inputSha256": "6ba0350235d72814c22d23ff614de8600ec69eb69ef4b3f64ffd875c0c9a0d8e",
+      "normalizedSha256": "289d254ba3b21276e921f80336de6c72243e33d52448858add62a431dadf23ee"
+    },
+    {
+      "name": "64-alpha-classic",
+      "height": 64,
+      "model": "classic",
+      "renderModel": "classic",
+      "legacy": false,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "56ee70fe23098d052e818ccdd965487f6f947d4a4d1d9a1321dc9f2aa1fcbb05"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "141236ba43bcc538d45da122f2bfe4ea0375d35bdc94c3c963f4ec634a5c8cb8"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "2ecd8e3d4dfb1f63d46ee62fab67818b593170849268cc3fb332eea581198d78"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "45d8d28127fc22beb4f505afd6f20cb168aea181e9953c1a67fd6fb012016788"
+        }
+      ],
+      "pattern": "alpha",
+      "inputSha256": "73d194f33cd17c9a62552a06486a8df6a43b02b8cccdf0f0b3385657ccb98f25",
+      "normalizedSha256": "73d194f33cd17c9a62552a06486a8df6a43b02b8cccdf0f0b3385657ccb98f25"
+    },
+    {
+      "name": "64-alpha-slim",
+      "height": 64,
+      "model": "slim",
+      "renderModel": "slim",
+      "legacy": false,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "56ee70fe23098d052e818ccdd965487f6f947d4a4d1d9a1321dc9f2aa1fcbb05"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "3dff449055994801d5c8a1c0370f7dd3dba563d99d48f904557f733b8b0c2f49"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "bb4425e59829b69b8dbb43f4d0f0293bbc8798fe66a3d60244a84c7ad0e4c5e2"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "008db02c2e4db45979316902d8d078fa9793cce2a435555cd6b44e97fc1afcf4"
+        }
+      ],
+      "pattern": "alpha",
+      "inputSha256": "73d194f33cd17c9a62552a06486a8df6a43b02b8cccdf0f0b3385657ccb98f25",
+      "normalizedSha256": "73d194f33cd17c9a62552a06486a8df6a43b02b8cccdf0f0b3385657ccb98f25"
+    },
+    {
+      "name": "64-transparent-classic",
+      "height": 64,
+      "model": "classic",
+      "renderModel": "classic",
+      "legacy": false,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "cc2cabad6c6e4fa6c5a0eea58ec39b221e0508e997455b4baf01282fe23787ca"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "c02e5b63cc9aa2882b4d171ac387b2b4700f31720a2187dcd83d072b354ff5eb"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "c02e5b63cc9aa2882b4d171ac387b2b4700f31720a2187dcd83d072b354ff5eb"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "f27ef18c10be737af8ca8fe3ea395c13210cf39e235d55cc2dcba48624512e83"
+        }
+      ],
+      "pattern": "transparent",
+      "inputSha256": "3f11fcd173f0d42f58699d03eae2f52ce24d5e04a60e48069b6176d7ef5c7913",
+      "normalizedSha256": "3f11fcd173f0d42f58699d03eae2f52ce24d5e04a60e48069b6176d7ef5c7913"
+    },
+    {
+      "name": "64-transparent-slim",
+      "height": 64,
+      "model": "slim",
+      "renderModel": "slim",
+      "legacy": false,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "cc2cabad6c6e4fa6c5a0eea58ec39b221e0508e997455b4baf01282fe23787ca"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "c02e5b63cc9aa2882b4d171ac387b2b4700f31720a2187dcd83d072b354ff5eb"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "c02e5b63cc9aa2882b4d171ac387b2b4700f31720a2187dcd83d072b354ff5eb"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "f27ef18c10be737af8ca8fe3ea395c13210cf39e235d55cc2dcba48624512e83"
+        }
+      ],
+      "pattern": "transparent",
+      "inputSha256": "3f11fcd173f0d42f58699d03eae2f52ce24d5e04a60e48069b6176d7ef5c7913",
+      "normalizedSha256": "3f11fcd173f0d42f58699d03eae2f52ce24d5e04a60e48069b6176d7ef5c7913"
+    },
+    {
+      "name": "32-opaque-classic",
+      "height": 32,
+      "model": "classic",
+      "renderModel": "classic",
+      "legacy": true,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "546755735d663e2a59c11924083e8155e495a17020348bc2450b4d93543f5fa5"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "ad1bb6bac70af369643fa51d4eda0cebbfca4059f7daee8345fdf25aa159b300"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "f0bea86d0a9a148ae9c68ed5c29942dd1d30f7f0d9a0a21f6bea4965be544a8c"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "5613fad46603d981ce66de5c3b6ee54941d1407d905c54612a5cf913fea38c20"
+        }
+      ],
+      "pattern": "opaque",
+      "inputSha256": "310d44061f1b3760099375837f4fbb7a7e933e65cc56058b5f1872b4304cded6",
+      "normalizedSha256": "d8f341eb449e6a43d8bd49d271763b9d6eea7e72f37ea8cbb50d533fe7bcac35"
+    },
+    {
+      "name": "32-opaque-slim",
+      "height": 32,
+      "model": "slim",
+      "renderModel": "classic",
+      "legacy": true,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "546755735d663e2a59c11924083e8155e495a17020348bc2450b4d93543f5fa5"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "ad1bb6bac70af369643fa51d4eda0cebbfca4059f7daee8345fdf25aa159b300"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "f0bea86d0a9a148ae9c68ed5c29942dd1d30f7f0d9a0a21f6bea4965be544a8c"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "5613fad46603d981ce66de5c3b6ee54941d1407d905c54612a5cf913fea38c20"
+        }
+      ],
+      "pattern": "opaque",
+      "inputSha256": "310d44061f1b3760099375837f4fbb7a7e933e65cc56058b5f1872b4304cded6",
+      "normalizedSha256": "d8f341eb449e6a43d8bd49d271763b9d6eea7e72f37ea8cbb50d533fe7bcac35"
+    },
+    {
+      "name": "32-alpha-classic",
+      "height": 32,
+      "model": "classic",
+      "renderModel": "classic",
+      "legacy": true,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "56ee70fe23098d052e818ccdd965487f6f947d4a4d1d9a1321dc9f2aa1fcbb05"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "3ccd04c6c78a615f8804fab1b11301fcaf7e943afdb05d976398cdfb4efbd690"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "341b7ad35693f68544b407a25b2c446e9f1ed263cc58953f105550b749d7ae6e"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "153d17569061489fdfd6e2c4a27ba498d40b5ec4723ec2ff2bb2d43deab0eb7d"
+        }
+      ],
+      "pattern": "alpha",
+      "inputSha256": "ea7414982a9daf754c29b64b5eeaf352ab75a3cc4f100e414adf11d095c4f41d",
+      "normalizedSha256": "7302a117f6480b19ac94238a837e37d05b987b1900e7bb969f6b9b88a1d55b71"
+    },
+    {
+      "name": "32-alpha-slim",
+      "height": 32,
+      "model": "slim",
+      "renderModel": "classic",
+      "legacy": true,
+      "previews": [
+        {
+          "kind": "head",
+          "width": 384,
+          "height": 384,
+          "sha256": "56ee70fe23098d052e818ccdd965487f6f947d4a4d1d9a1321dc9f2aa1fcbb05"
+        },
+        {
+          "kind": "front",
+          "width": 384,
+          "height": 640,
+          "sha256": "3ccd04c6c78a615f8804fab1b11301fcaf7e943afdb05d976398cdfb4efbd690"
+        },
+        {
+          "kind": "back",
+          "width": 384,
+          "height": 640,
+          "sha256": "341b7ad35693f68544b407a25b2c446e9f1ed263cc58953f105550b749d7ae6e"
+        },
+        {
+          "kind": "three-view",
+          "width": 1152,
+          "height": 672,
+          "sha256": "153d17569061489fdfd6e2c4a27ba498d40b5ec4723ec2ff2bb2d43deab0eb7d"
+        }
+      ],
+      "pattern": "alpha",
+      "inputSha256": "ea7414982a9daf754c29b64b5eeaf352ab75a3cc4f100e414adf11d095c4f41d",
+      "normalizedSha256": "7302a117f6480b19ac94238a837e37d05b987b1900e7bb969f6b9b88a1d55b71"
+    }
+  ]
+}

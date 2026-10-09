@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { copyInlineQuery, initializeTelegram, shareInline, type TelegramWebApp } from '../src/telegram';
+import { callEndpoint, copyInlineQuery, endpointsAvailable, initializeTelegram, shareInline, type EndpointCallError, type TelegramWebApp } from '../src/telegram';
 
 function telegram(overrides: Partial<TelegramWebApp> = {}): TelegramWebApp {
   return {
@@ -11,8 +11,27 @@ function telegram(overrides: Partial<TelegramWebApp> = {}): TelegramWebApp {
   };
 }
 
+describe('Telegram endpoints', () => {
+  it('passes results and endpoint errors through the authenticated bridge without forwarding a caller identity', async () => {
+    const failure = Object.assign(new Error('Skin not found'), { type: 'ENDPOINT_ERROR', parameters: { code: 'NOT_FOUND' } });
+    const call = vi.fn((_name: string, input: Record<string, unknown>, callback: (error: EndpointCallError | null, result?: unknown) => void) => {
+      if (input.reference === 'missing') callback(failure);
+      else callback(null, { card: { name: 'Notch' } });
+    });
+    const app = telegram({ initData: 'synthetic-init-data', Serverless: { call } });
+    expect(endpointsAvailable(app)).toBe(true);
+    await expect(callEndpoint(app, 'lookupSkin', { reference: 'Notch' })).resolves.toEqual({ card: { name: 'Notch' } });
+    expect(call).toHaveBeenCalledWith('lookupSkin', { reference: 'Notch' }, expect.any(Function));
+    await expect(callEndpoint(app, 'lookupSkin', { reference: 'missing' })).rejects.toBe(failure);
+    app.initData = '';
+    expect(endpointsAvailable(app)).toBe(false);
+    await expect(callEndpoint(app, 'lookupSkin', { reference: 'Notch' })).rejects.toThrow('Open this Mini App in Telegram');
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('Telegram inline handoff', () => {
-  it.each(['skin 069a79f444e94726a5befca90e38aaf5', `view upload:${'a'.repeat(64)}`])('shares self-contained content through the chat chooser', (query) => {
+  it.each([`skin texture:c-${'a'.repeat(64)}`, `view texture:s-${'a'.repeat(64)}`])('shares self-contained content through the chat chooser', (query) => {
     const switchInlineQuery = vi.fn();
     expect(shareInline(telegram({ switchInlineQuery }), query)).toBe('inline');
     expect(switchInlineQuery).toHaveBeenCalledWith(query, ['users', 'groups', 'channels']);
@@ -30,7 +49,7 @@ describe('Telegram inline handoff', () => {
   it.each(['unavailable', 'rejected'])('keeps inline text selectable when clipboard is %s', async (mode) => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: mode === 'unavailable' ? undefined : { writeText: vi.fn().mockRejectedValue(new Error('Permission denied')) } });
     const input = document.createElement('textarea');
-    input.value = '@minecraft_skin_bot view upload:' + 'a'.repeat(64);
+    input.value = '@minecraft_skin_bot view texture:c-' + 'a'.repeat(64);
     document.body.append(input);
     expect(await copyInlineQuery(input)).toBe(false);
     expect(input.selectionStart).toBe(0);

@@ -13,17 +13,6 @@ permissions:
     contents: read
 
 jobs:
-    bot:
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-            - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-            - run: uv sync --frozen
-            - run: uv run ruff check .
-            - run: uv run ruff format --check .
-            - run: uv run mypy
-            - run: uv run pytest
-
     viewer:
         runs-on: ubuntu-latest
         defaults:
@@ -33,14 +22,18 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
             - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
               with:
-                  node-version: latest
+                  node-version: '24.21.0'
                   cache: npm
                   cache-dependency-path: web/package-lock.json
-            - run: npm install --global npm
-            - run: npm ci
+            - name: Install pinned npm
+              run: |
+                  npm_package="$(node --input-type=module -e 'import { readFileSync } from "node:fs"; const manifest = JSON.parse(readFileSync("package.json", "utf8")); if (!/^npm@\d+\.\d+\.\d+$/.test(manifest.packageManager)) throw new Error("packageManager must pin npm"); console.log(manifest.packageManager);')"
+                  npm install --global "$npm_package" --ignore-scripts
+            - run: npm ci --ignore-scripts
             - run: npm run lint
             - run: npm run typecheck
             - run: npm test
             - run: npm run build
+            - run: test -s dist/index.html
             - run: npm exec -- playwright install --with-deps chromium
             - run: npm run test:e2e

@@ -1,6 +1,8 @@
 {
   "$schema": "./node_modules/@tgcloud/cli/schema/tgcloud.json",
   "static": {
-    "source": "web/dist"
+    "source": "web/dist",
+    "spa": true,
+    "immutable": ["/assets/*"]
   }
 }

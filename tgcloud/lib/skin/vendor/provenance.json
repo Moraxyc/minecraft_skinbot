@@ -1,0 +1,93 @@
+{
+  "packages": [
+    {
+      "name": "fast-png",
+      "version": "8.0.0",
+      "license": "MIT",
+      "integrity": "sha512-gCysNasJ8KEMgfdYIKd/wTDo6ENK1PWT0RJO7O+0pgmuHPw2O6tA1WvdxFRJoLf9V8yFYpG0FA1YgI8X97OhJA==",
+      "source": "https://registry.npmjs.org/fast-png/-/fast-png-8.0.0.tgz"
+    },
+    {
+      "name": "fflate",
+      "version": "0.8.2",
+      "license": "MIT",
+      "integrity": "sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==",
+      "source": "https://registry.npmjs.org/fflate/-/fflate-0.8.2.tgz"
+    },
+    {
+      "name": "iobuffer",
+      "version": "6.0.1",
+      "license": "MIT",
+      "integrity": "sha512-SZWYkWNfjIXIBYSDpXDYIgshqtbOPsi4lviawAEceR1Kqk+sHDlcQjWrzNQsii80AyBY0q5c8HCTNjqo74ul+Q==",
+      "source": "https://registry.npmjs.org/iobuffer/-/iobuffer-6.0.1.tgz"
+    },
+    {
+      "name": "pako",
+      "version": "2.1.0",
+      "license": "(MIT AND Zlib)",
+      "integrity": "sha512-w+eufiZ1WuJYgPXbV/PO3NCMEc3xqylkKHzp8bxp1uW4qaSNQUkwmLLEc3kKsfz8lpV1F8Ht3U1Cm+9Srog2ug==",
+      "source": "https://registry.npmjs.org/pako/-/pako-2.1.0.tgz"
+    }
+  ],
+  "bundler": {
+    "name": "esbuild",
+    "version": "0.25.12",
+    "integrity": "sha512-bbPBYYrtZbkt6Os6FiTLCTFxvq4tt3JKall1vRwshA3fdVztsLAatFaZobhkBC8/BrPetoa0oksYoKXoG4ryJg==",
+    "format": "esm",
+    "platform": "browser",
+    "target": "es2022",
+    "minify": true
+  },
+  "alterationNotice": "Altered source distribution: fast-png receives a fixed skin inflation budget; pako's high-level Inflate rejects concatenated and trailing zlib streams; optional text paths are disabled. The strictZlib flag is a local, version-bound adaptation, not a pako API. Original PNG filtering, CRC, palette conversion, zlib algorithms and encoding remain upstream library code.",
+  "guardedSources": {
+    "fast-png/lib/png_decoder.js": "14453916f2b5cdfaae36bdd511e77a13930ae7eb0d542f21cc59c1c9e69c2166",
+    "fast-png/lib/helpers/text.js": "3af1b5d0fb66ff7d5ea81683c70f7e5a0a76959f1e44a99a699fd5b9f730a589",
+    "iobuffer/lib/text.js": "4321a36e64f09be499af03a89cdc929014068213d7156d67af1bbc218d3736b4",
+    "pako/lib/inflate.js": "f6d86f7e71ecbbdec39f91d109a92147a215db9e31e3dcc540db19cfa71c0616",
+    "pako/lib/utils/strings.js": "5d072a04492071250b8ea5bb8f64106adec4301429c32e3670d30e163b3f94a2"
+  },
+  "sourceHashes": {
+    "node_modules/fast-png/lib/convert_indexed_to_rgb.js": "61f181660b6788ad2e69adfe100a62f2a201a1a59e9b0f2cdedccfe01684aa30",
+    "node_modules/fast-png/lib/helpers/apply_unfilter.js": "7b1be13acf45d6c52a3a73ddd1bc9438e7731c6020a4e3d25b9b18588021f046",
+    "node_modules/fast-png/lib/helpers/crc.js": "2fb9fb52ec2548ed5752a56a1a422b859e4d6ec59aa832a46fc18eb3d11b7ed2",
+    "node_modules/fast-png/lib/helpers/decode_interlace_adam7.js": "021293fa5fe1b63cef24510296532f957e6b87f2aaaabb72f1eeb6ea8420974f",
+    "node_modules/fast-png/lib/helpers/decode_interlace_null.js": "86d04140c7d6c91aa21363071dff02c1484e3026e282bb218be4f0a36ecfb57c",
+    "node_modules/fast-png/lib/helpers/signature.js": "c3093e618973930ec1215018879fc2e5e5806b733b2db4731fe9a0fd709568e7",
+    "node_modules/fast-png/lib/helpers/text.js": "3af1b5d0fb66ff7d5ea81683c70f7e5a0a76959f1e44a99a699fd5b9f730a589",
+    "node_modules/fast-png/lib/helpers/unfilter.js": "dc7029a0a950fba8026601e4cd37ad59879b4ddf1752c11a2813e3f67c30c78f",
+    "node_modules/fast-png/lib/index.js": "228f83228c2ac8d29072b278d46bad45a2f4b7343a10029c7a453ab8d2de4ca6",
+    "node_modules/fast-png/lib/internal_types.js": "440b763a49663f6ff150685eb2a1b56ca7084994803ca9b71b02bbe353772a91",
+    "node_modules/fast-png/lib/png_decoder.js": "14453916f2b5cdfaae36bdd511e77a13930ae7eb0d542f21cc59c1c9e69c2166",
+    "node_modules/fast-png/lib/png_encoder.js": "bec40cf1bca6d0ae8466581add15799817aa67497e8bf9256e7b95838cffb8a6",
+    "node_modules/fast-png/lib/types.js": "d3302874d66f1b2277952ac37b027607408e17ded30e7f7054425b7a4958254a",
+    "node_modules/fflate/esm/browser.js": "8cc1f687e0159e977addb6b85e274dbd11e622cf151f4fcb7b85d49622ea43e7",
+    "node_modules/iobuffer/lib/iobuffer.js": "73912c6970268edb17fceca76ac0f3a8b6e97b5039d9d15f655b7f19e12fab33",
+    "node_modules/iobuffer/lib/text.js": "4321a36e64f09be499af03a89cdc929014068213d7156d67af1bbc218d3736b4",
+    "node_modules/pako/lib/inflate.js": "f6d86f7e71ecbbdec39f91d109a92147a215db9e31e3dcc540db19cfa71c0616",
+    "node_modules/pako/lib/utils/common.js": "830c22b5a7bba24d4ed7c0e5a7538d922f30bae7aad05e16b3a20728f187bc47",
+    "node_modules/pako/lib/utils/strings.js": "5d072a04492071250b8ea5bb8f64106adec4301429c32e3670d30e163b3f94a2",
+    "node_modules/pako/lib/zlib/adler32.js": "1f181b4365677dcad5bd8fcc4594707171b7317875c50e88054b75d4fa285930",
+    "node_modules/pako/lib/zlib/constants.js": "37c65f82b9bacde2bbccc9c980a20dee7e2b7f3658304a30abe1023e02ec407b",
+    "node_modules/pako/lib/zlib/crc32.js": "5452655b14329267c4c3fc58c43df53f4e6f5196fde9d2d431b1ad089e5f3742",
+    "node_modules/pako/lib/zlib/gzheader.js": "8fa0b4995cea477be96b8783a7d6c7cf5fec96765c2108c3bd52e77104bfdbd3",
+    "node_modules/pako/lib/zlib/inffast.js": "694b23b4d2c00c9d274274ecf092dc7c0c0c64125d54bda5286baf2711822d00",
+    "node_modules/pako/lib/zlib/inflate.js": "2375dd0e1a5eebf91fd75301b4cc8c120712978f513db8fedd2a5f3321f0145f",
+    "node_modules/pako/lib/zlib/inftrees.js": "fa1434611e4cd6bb5bca02c99315bdb639a434c02f44fc1cc64d4b258187908f",
+    "node_modules/pako/lib/zlib/messages.js": "eec5f5d6b8120ada9cd48a3ca0a253c64777906e835477b090e053434d38cf6c",
+    "node_modules/pako/lib/zlib/zstream.js": "5fa10c7a59ca99113cf92d1260e56cbd6282e15afa85dc8a0eb8e8d6d2321298",
+    "scripts/skin-png/bounded-inflate.js": "3e499b7abc64b8a7d9b85c89a1ae9f31b9de7b2802b27dc3ab956d732a86eaf1",
+    "scripts/skin-png/entry.js": "8bf40dd1aa1b13d91391cd190399080b569d793b29639c8130f1faa97e390128",
+    "scripts/build-skin-png.mjs": "4f9d4c41df8bc5135473b0415c508de5f49f67fd3b1ba7f855060ba55f3234ea"
+  },
+  "licenseHashes": {
+    "fast-png/LICENSE": "47ec9747cf2c470a505fcb20f3ec2ff2e60ea4febaf2e1e7041a24fc369fac3c",
+    "fflate/LICENSE": "805f6cb28bb8b6d3a0badd83c93bccd9671fa01a3b4b92b7042b0743325ac243",
+    "iobuffer/LICENSE": "1c22118fd112e8c394a5ec0598d2e2dfcdc19b3e1055ac3eaccdb2522b777335",
+    "pako/LICENSE": "a04665b3b2de56c66730c1f720f528175739e4104f79073614aa611da1e85539"
+  },
+  "output": {
+    "file": "png-codec.js",
+    "bytes": 56941,
+    "sha256": "62dee1d4c45af3ec73bc78715bc1d925dba8cc4f016ef588cd643968da12b021"
+  }
+}

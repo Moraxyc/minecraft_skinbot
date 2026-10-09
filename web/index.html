@@ -11,18 +11,22 @@
     <main class="app">
       <header>
         <p class="eyebrow" data-i18n="title">Minecraft Skin Viewer</p>
-        <h1 id="name" data-i18n="heading">3D skin viewer</h1>
+        <h1 id="name-heading">
+          <button id="edit-name" type="button" class="name-button" data-i18n-aria="editName" aria-label="Change player" disabled>
+            <span id="name" data-i18n="heading">3D skin viewer</span>
+            <svg class="edit-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m14 5 5 5" /></svg>
+          </button>
+        </h1>
+        <form id="lookup" class="name-editor" hidden>
+          <input id="lookup-reference" type="text" data-i18n-aria="lookupLabel" aria-label="Minecraft username or UUID" aria-describedby="lookup-status" maxlength="256" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="go" required />
+          <div class="name-actions">
+            <button id="lookup-button" type="submit" data-i18n="lookupButton">Look up</button>
+            <button id="cancel-lookup" type="button" class="secondary" data-i18n="cancel">Cancel</button>
+          </div>
+        </form>
         <p id="details" data-i18n="openTelegramSkin" class="hint">Open a skin from Telegram.</p>
-        <p id="upload-expiry" class="hint" hidden></p>
+        <p id="lookup-status" class="hint" role="status"></p>
       </header>
-      <form id="player-form" class="player-form" novalidate hidden>
-        <label for="player-input" data-i18n="playerInput">Username or UUID</label>
-        <div class="player-entry">
-          <input id="player-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="player-error" required />
-          <button id="player-submit" data-i18n="viewSkin" type="submit">View skin</button>
-        </div>
-        <p id="player-error" class="hint" role="alert" hidden></p>
-      </form>
       <section id="stage" data-i18n-aria="stage" class="stage" aria-label="Interactive 3D skin">
         <canvas id="viewer" data-i18n-aria="canvas" aria-label="Drag to rotate. Pinch or scroll to zoom."></canvas>
         <p id="status" data-i18n="openBotSkin" class="status" role="status">Open a skin from the bot.</p>
@@ -67,8 +71,7 @@
       </fieldset>
       <fieldset id="sharing" disabled>
         <div class="sharing">
-          <button id="share-skin" data-i18n="shareSkin" type="button">Share Skin</button>
-          <button id="share-view" data-i18n="shareView" type="button" class="secondary">Share Three-view</button>
+          <button id="share-view" data-i18n="share" type="button">Share</button>
         </div>
       </fieldset>
       <p id="share-status" class="hint" role="status"></p>

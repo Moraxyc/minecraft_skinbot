@@ -1,6 +1,7 @@
-import { inlineReference, loadProfile, parsePlayerInput, parseReference, ViewerError } from './api';
+import { configuredBotUsername, parseCardReference, parseLinkReference, parseSnapshot, parseSnapshotToken } from './snapshot';
+import { loadTexture, TextureError } from './textures';
 import { localizeDocument, translator, viewerLocale } from './i18n';
-import { copyInlineQuery, getTelegram, initializeTelegram, shareInline } from './telegram';
+import { callEndpoint, copyInlineQuery, endpointsAvailable, getTelegram, initializeTelegram, shareInline, type EndpointCallError } from './telegram';
 import { Viewer, type AnimationName, type CameraView, type PreviewModel } from './viewer';
 import './style.css';
 
@@ -20,32 +21,82 @@ const locale = viewerLocale(
 const t = translator(locale);
 localizeDocument(locale);
 const cleanupTelegram = initializeTelegram(app);
-let reference = parseReference(window.location.search, app?.initDataUnsafe?.start_param);
-const playerForm = element<HTMLFormElement>('player-form');
-const playerInput = element<HTMLInputElement>('player-input');
-const playerSubmit = element<HTMLButtonElement>('player-submit');
-const playerError = element('player-error');
-playerForm.hidden = reference !== null;
-if (!reference) element('details').textContent = t('enterPlayer');
+let snapshot = parseSnapshot(window.location.search, app?.initDataUnsafe?.start_param);
+let cardId = parseCardReference(window.location.search, app?.initDataUnsafe?.start_param);
+const linkReference = parseLinkReference(window.location.search);
+let botUsername = configuredBotUsername(import.meta.env.VITE_BOT_USERNAME);
+let playerName: string | null = null;
+let playerUUID: string | null = null;
+const lookupForm = element<HTMLFormElement>('lookup');
+const lookupInput = element<HTMLInputElement>('lookup-reference');
+const lookupButton = element<HTMLButtonElement>('lookup-button');
+const lookupStatus = element('lookup-status');
+const nameHeading = element('name-heading');
+const editName = element<HTMLButtonElement>('edit-name');
+const cancelLookup = element<HTMLButtonElement>('cancel-lookup');
+if (!snapshot) element('details').textContent = t('openTelegramSkin');
 const status = element('status');
 const controls = element<HTMLFieldSetElement>('controls');
 const sharing = element<HTMLFieldSetElement>('sharing');
 const retry = element<HTMLButtonElement>('retry');
 const notice = element('viewer-notice');
-const expiry = element('upload-expiry');
 const modelControls = element('model-controls');
 const previewModel = element<HTMLSelectElement>('preview-model');
 const pause = element<HTMLButtonElement>('pause');
 const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
 let animationPaused = motionPreference.matches;
 let canvas = element<HTMLCanvasElement>('viewer');
-let botUsername = '';
 let viewer: Viewer | undefined;
 let viewerReady = false;
 let contextLost = false;
 let loading = false;
 let closed = false;
 let request: AbortController | undefined;
+let preparingShare = false;
+
+interface ViewerState {
+  botUsername: string;
+  card: { id: number; token: string; name: string | null; uuid: string | null } | null;
+}
+
+function updateSharing(): void {
+  const available = Boolean(botUsername || endpointsAvailable(app) && app.shareMessage && app.isVersionAtLeast?.('8.0'));
+  element('share-view').hidden = !available;
+}
+
+function updateLookupControls(): void {
+  const disabled = !endpointsAvailable(app) || loading;
+  editName.disabled = disabled;
+  lookupInput.disabled = disabled;
+  lookupButton.disabled = disabled;
+  cancelLookup.disabled = disabled;
+}
+
+function closeLookup(): void {
+  lookupForm.hidden = true;
+  nameHeading.hidden = false;
+  lookupStatus.textContent = '';
+  editName.focus();
+}
+
+function applyViewerState(state: ViewerState): void {
+  botUsername = configuredBotUsername(state.botUsername);
+  if (state.card) {
+    const resolved = parseSnapshotToken(state.card.token);
+    if (!resolved) throw new Error('Invalid skin snapshot.');
+    snapshot = resolved;
+    cardId = state.card.id;
+    playerName = state.card.name;
+    playerUUID = state.card.uuid;
+  }
+  updateSharing();
+}
+
+function endpointErrorText(error: unknown): string {
+  const failure = error as EndpointCallError | undefined;
+  if (failure?.type === 'ENDPOINT_ERROR') return failure.message;
+  return t(failure?.type === 'UNAUTHORIZED' ? 'telegramRequired' : 'serviceUnavailable');
+}
 
 function updatePause(): void {
   viewer?.setPaused(animationPaused);
@@ -61,15 +112,16 @@ function updateMotionPreference(): void {
 motionPreference.addEventListener('change', updateMotionPreference);
 updatePause();
 
-function share(kind: 'skin' | 'view'): void {
-  if (!reference || !botUsername) return;
-  const query = `${kind} ${inlineReference(reference)}`;
+function shareFallback(): void {
+  if (!snapshot || !botUsername) return;
+  const query = `view texture:${snapshot.token}`;
   const outcome = shareInline(app, query);
   const fallback = element<HTMLAnchorElement>('share-fallback');
   fallback.hidden = outcome !== 'manual';
   fallback.href = `https://t.me/${botUsername}`;
   const input = element<HTMLTextAreaElement>('inline-query');
   input.value = `@${botUsername} ${query}`;
+  input.setAttribute('aria-label', t('inlineQuery'));
   input.hidden = outcome !== 'manual';
   element('copy-query').hidden = outcome !== 'manual';
   element('share-status').textContent = outcome === 'manual'
@@ -77,90 +129,108 @@ function share(kind: 'skin' | 'view'): void {
     : t('chooseChat');
 }
 
+async function share(): Promise<void> {
+  if (!snapshot || preparingShare || closed) return;
+  if (!endpointsAvailable(app) || !app.shareMessage || !app.isVersionAtLeast?.('8.0')) {
+    shareFallback();
+    return;
+  }
+  preparingShare = true;
+  sharing.disabled = true;
+  element('share-status').textContent = t('preparingShare');
+  try {
+    const prepared = await callEndpoint<{ id: string }>(app, 'prepareShare', {
+      ...(cardId ? { cardId } : { token: snapshot.token }),
+      view: 'three-view',
+    });
+    if (closed) return;
+    element('share-status').textContent = t('choosePreparedChat');
+    app.shareMessage(prepared.id, (sent) => {
+      if (!closed) element('share-status').textContent = t(sent ? 'shared' : 'shareCancelled');
+    });
+  } catch (error) {
+    if (!closed) element('share-status').textContent = endpointErrorText(error);
+  } finally {
+    preparingShare = false;
+    sharing.disabled = !snapshot;
+  }
+}
+
 async function start(): Promise<void> {
   if (loading || closed) return;
-  if (!reference) {
-    const hasLaunchReference = ['uuid', 'upload', 'texture', 'tgWebAppStartParam'].some((key) => launchParams.has(key))
+  if (!snapshot) {
+    const hasLaunchReference = [...launchParams.keys()].some((key) => key !== 'lang')
       || Boolean(app?.initDataUnsafe?.start_param);
-    status.textContent = t(hasLaunchReference ? 'invalidLink' : 'enterPlayer');
+    status.textContent = t(hasLaunchReference ? 'invalidLink' : 'openTelegramSkin');
+    if (botUsername) {
+      const fallback = element<HTMLAnchorElement>('share-fallback');
+      fallback.href = `https://t.me/${botUsername}`;
+      fallback.hidden = false;
+    }
     return;
   }
   loading = true;
-  playerInput.disabled = true;
-  playerSubmit.disabled = true;
+  updateLookupControls();
   request = new AbortController();
   viewer?.dispose();
   viewer = undefined;
   viewerReady = false;
   contextLost = false;
   controls.disabled = true;
-  sharing.disabled = true;
-  botUsername = '';
+  sharing.disabled = preparingShare;
   retry.hidden = true;
   retry.disabled = true;
   notice.hidden = true;
-  expiry.hidden = true;
   modelControls.hidden = true;
   status.hidden = false;
   status.textContent = t('loading');
   try {
-    const profile = await loadProfile(reference, import.meta.env.VITE_API_BASE_URL || window.location.origin, request.signal);
-    if (closed) return;
-    if (reference.kind === 'profile') reference = { kind: 'profile', id: profile.reference };
-    botUsername = profile.bot_username;
-    sharing.disabled = false;
-    // Fixed texture and upload links carry no player name, so the heading stays localized.
-    const placeholder = reference.kind === 'profile' ? null : reference.kind === 'upload' ? 'uploadedSkin' : 'sharedSkin';
-    element('name').textContent = placeholder ? t(placeholder) : profile.name;
-    element('details').textContent = `${t('model')}: ${t(profile.model)}${profile.cape_url ? ` · ${t('cape')}` : ''}`;
-    if (profile.upload_expires_at !== null) {
-      const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'long' })
-        .format(new Date(profile.upload_expires_at * 1000));
-      expiry.textContent = `${t('uploadAvailableUntil')} ${date} · ${t('renewUpload')}`;
-      expiry.hidden = false;
-    }
-    // skinview3d attaches anonymous canvas listeners that dispose does not remove.
-    const nextCanvas = canvas.cloneNode(false) as HTMLCanvasElement;
-    canvas.replaceWith(nextCanvas);
-    canvas = nextCanvas;
-    canvas.addEventListener('webglcontextrestored', onContextRestored);
-    viewer = new Viewer(canvas, element('stage'), () => {
-      if (canvas !== nextCanvas) return;
-      contextLost = true;
-      controls.disabled = true;
-      status.hidden = false;
-      status.textContent = t('restoring');
-      retry.hidden = false;
-    });
-    const result = await viewer.load(profile, request.signal);
-    if (closed) return;
-    viewerReady = true;
-    playerForm.hidden = true;
-    updatePause();
-    viewer.skin.renderPaused = document.hidden;
-    for (const layer of ['inner', 'outer']) element<HTMLInputElement>(layer).checked = true;
-    for (const button of animationButtons) button.setAttribute('aria-pressed', String(button.dataset.animation === 'idle'));
-    previewModel.value = 'auto';
-    modelControls.hidden = reference.kind !== 'upload' || !result.canOverrideModel;
-    if (profile.cape_unavailable || result.capeUnavailable) {
-      notice.textContent = t('capeUnavailable');
-      notice.hidden = false;
-    }
-    status.hidden = !contextLost;
-    controls.disabled = contextLost;
-    retry.hidden = !contextLost;
+    element('name').textContent = playerName ?? t('sharedSkin');
+    element('details').textContent = `${t('model')}: ${t(snapshot.model)}${snapshot.capeURL ? ` · ${t('cape')}` : ''}${playerUUID ? ` · UUID: ${playerUUID}` : ''}`;
+    const { image } = await loadTexture(snapshot.skinURL, 'skin', request.signal);
+    try {
+      if (closed) return;
+      // skinview3d leaves anonymous mouse and touch listeners on disposed canvases.
+      const nextCanvas = canvas.cloneNode(false) as HTMLCanvasElement;
+      canvas.replaceWith(nextCanvas);
+      canvas = nextCanvas;
+      canvas.addEventListener('webglcontextrestored', onContextRestored);
+      viewer = new Viewer(canvas, element('stage'), () => {
+        if (canvas !== nextCanvas) return;
+        contextLost = true;
+        controls.disabled = true;
+        status.hidden = false;
+        status.textContent = t('restoring');
+        retry.hidden = false;
+      });
+      const result = await viewer.load(snapshot, image, request.signal);
+      if (closed) return;
+      viewerReady = true;
+      updatePause();
+      viewer.skin.renderPaused = document.hidden;
+      for (const layer of ['inner', 'outer']) element<HTMLInputElement>(layer).checked = true;
+      for (const button of animationButtons) button.setAttribute('aria-pressed', String(button.dataset.animation === 'idle'));
+      previewModel.value = 'auto';
+      modelControls.hidden = !result.canOverrideModel;
+      if (result.capeUnavailable) {
+        notice.textContent = t('capeUnavailable');
+        notice.hidden = false;
+      }
+      status.hidden = !contextLost;
+      controls.disabled = contextLost;
+      retry.hidden = !contextLost;
+    } finally { image.close(); }
   } catch (error) {
     if (closed) return;
     viewer?.dispose();
     viewer = undefined;
-    status.textContent = t(error instanceof ViewerError ? error.code : 'viewerUnavailable');
-    retry.hidden = error instanceof ViewerError && ['uploadExpired', 'playerNotFound'].includes(error.code);
+    status.textContent = t(error instanceof TextureError ? error.code : 'viewerUnavailable');
+    retry.hidden = false;
   } finally {
     loading = false;
     request = undefined;
     retry.disabled = false;
-    playerInput.disabled = false;
-    playerSubmit.disabled = false;
+    updateLookupControls();
   }
 }
 
@@ -174,24 +244,6 @@ function onContextRestored(event: Event): void {
   }
 }
 
-playerForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  if (loading || closed) return;
-  const nextReference = parsePlayerInput(playerInput.value);
-  playerInput.setAttribute('aria-invalid', String(!nextReference));
-  playerError.hidden = nextReference !== null;
-  if (!nextReference) {
-    playerError.textContent = t('invalidPlayer');
-    playerInput.focus();
-    return;
-  }
-  reference = nextReference;
-  void start();
-});
-playerInput.addEventListener('input', () => {
-  playerInput.removeAttribute('aria-invalid');
-  playerError.hidden = true;
-});
 retry.addEventListener('click', () => { void start(); });
 element('reset').addEventListener('click', () => viewer?.reset());
 element('zoom-in').addEventListener('click', () => viewer?.zoom('in'));
@@ -216,13 +268,55 @@ for (const button of animationButtons) {
     for (const item of animationButtons) item.setAttribute('aria-pressed', String(item === button));
   });
 }
-element('share-skin').addEventListener('click', () => share('skin'));
-element('share-view').addEventListener('click', () => share('view'));
+element('share-view').addEventListener('click', () => { void share(); });
+editName.addEventListener('click', () => {
+  if (!endpointsAvailable(app) || loading || closed) return;
+  lookupInput.value = playerName ?? playerUUID ?? '';
+  lookupStatus.textContent = '';
+  nameHeading.hidden = true;
+  lookupForm.hidden = false;
+  lookupInput.focus();
+  lookupInput.select();
+});
+cancelLookup.addEventListener('click', closeLookup);
+lookupForm.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || loading) return;
+  event.preventDefault();
+  closeLookup();
+});
+lookupForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!endpointsAvailable(app) || loading || closed) return;
+  const reference = lookupInput.value.trim();
+  if (!reference) {
+    lookupInput.value = '';
+    lookupInput.reportValidity();
+    return;
+  }
+  loading = true;
+  updateLookupControls();
+  retry.disabled = true;
+  lookupStatus.textContent = t('lookingUp');
+  void callEndpoint<ViewerState>(app, 'lookupSkin', { reference })
+    .then(async (state) => {
+      if (closed) return;
+      applyViewerState(state);
+      loading = false;
+      updateLookupControls();
+      closeLookup();
+      await start();
+    })
+    .catch((error: unknown) => { if (!closed) lookupStatus.textContent = endpointErrorText(error); })
+    .finally(() => {
+      loading = false;
+      updateLookupControls();
+      retry.disabled = false;
+      if (!closed && !lookupForm.hidden) lookupInput.focus();
+    });
+});
 element('copy-query').addEventListener('click', () => {
   void copyInlineQuery(element<HTMLTextAreaElement>('inline-query')).then((copied) => {
-    element('share-status').textContent = copied
-      ? t('copied')
-      : t('selectQuery');
+    element('share-status').textContent = t(copied ? 'copied' : 'selectQuery');
   });
 });
 element<HTMLAnchorElement>('share-fallback').addEventListener('click', (event) => {
@@ -240,4 +334,24 @@ window.addEventListener('pagehide', () => {
   cleanupTelegram();
   motionPreference.removeEventListener('change', updateMotionPreference);
 }, { once: true });
-void start();
+async function bootstrap(): Promise<void> {
+  loading = true;
+  updateLookupControls();
+  updateSharing();
+  if (endpointsAvailable(app)) {
+    try {
+      const state = await callEndpoint<ViewerState>(app, 'getCard', linkReference);
+      if (closed) return;
+      applyViewerState(state);
+    } catch (error) {
+      if (closed) return;
+      cardId = null;
+      lookupStatus.textContent = endpointErrorText(error);
+    }
+  }
+  loading = false;
+  updateLookupControls();
+  await start();
+}
+
+void bootstrap();

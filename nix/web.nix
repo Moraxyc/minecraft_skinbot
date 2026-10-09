@@ -4,11 +4,11 @@
   buildNpmPackage,
   importNpmLock,
   nodejs_24,
-  apiBase ? "",
+  npm,
 }:
 let
   source = lib.fileset.toSource {
-    root = ../web;
+    root = ../.;
     fileset = lib.fileset.unions [
       ../web/package.json
       ../web/package-lock.json
@@ -17,8 +17,15 @@ let
       ../web/vite.config.ts
       ../web/playwright.config.ts
       ../web/.oxlintrc.json
-      (lib.fileset.fileFilter (file: file.hasExt "ts" || file.hasExt "css") ../web/src)
-      (lib.fileset.fileFilter (file: file.hasExt "ts") ../web/tests)
+      ../tgcloud/lib/skin/renderer.js
+      ../tgcloud/lib/skin/renderer.d.ts
+      ../tgcloud/lib/skin/labels.js
+      ../tgcloud/lib/skin/labels.d.ts
+      (lib.fileset.fileFilter (
+        file: file.hasExt "ts" || file.hasExt "css" || file.hasExt "md"
+      ) ../web/src)
+      (lib.fileset.fileFilter (file: file.hasExt "ts" || file.hasExt "png") ../web/tests)
+      (lib.fileset.fileFilter (file: file.hasExt "png") ../tests/golden)
     ];
   };
 in
@@ -26,12 +33,18 @@ buildNpmPackage {
   pname = "minecraft-skin-viewer";
   version = "0.1.0";
   src = source;
+  sourceRoot = "source/web";
   nodejs = nodejs_24;
-  npmDeps = importNpmLock { npmRoot = source; };
+  nativeBuildInputs = [ npm ];
+  npmDeps = importNpmLock { npmRoot = ../web; };
   npmConfigHook = importNpmLock.npmConfigHook;
-  env = {
-    VITE_API_BASE_URL = apiBase;
-  };
+  npmInstallFlags = [ "--ignore-scripts" ];
+  npmRebuildFlags = [ "--ignore-scripts" ];
+  preConfigure = ''
+    node --version
+    npm --version
+    test "$(node -p 'require("./package.json").packageManager')" = "npm@$(npm --version)"
+  '';
   doCheck = true;
   checkPhase = ''
     runHook preCheck

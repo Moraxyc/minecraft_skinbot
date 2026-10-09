@@ -29,6 +29,14 @@ describe('viewer language sources', () => {
     expect(viewerLocale({}, [], 'fr')).toBe('en');
   });
 
+  it('ignores non-string Telegram language fields and retains URL or default fallback', () => {
+    for (const language of [123, true, {}, [], null]) {
+      const app = JSON.parse(JSON.stringify({ initDataUnsafe: { user: { language_code: language } } }));
+      expect(viewerLocale(app, ['en-US'], 'zh-Hans')).toBe('zh-Hans');
+      expect(viewerLocale(app, ['zh-CN'])).toBe('en');
+    }
+  });
+
   it('prefers the Telegram user language over the requested language inside Telegram', () => {
     expect(viewerLocale({ initDataUnsafe: { user: { language_code: 'en-US' } } }, [], 'zh-CN')).toBe('en');
     expect(viewerLocale({ initDataUnsafe: { user: { language_code: 'zh' } } }, [], 'en')).toBe('zh-Hans');
@@ -45,5 +53,5 @@ it('localizes visible controls and accessibility labels while preserving player 
   expect(document.getElementById('name')?.textContent).toBe('Notch');
   localizeDocument('en');
   expect(document.querySelector('button')?.textContent).toBe('Reset camera');
-  expect(translator('zh-Hans')('uploadExpired')).toBe('上传已过期，请重新向机器人发送 PNG。');
+  expect(translator('zh-Hans')('skinUnavailable')).toBe('皮肤暂不可用，请检查网络连接后重试。');
 });

@@ -1,204 +1,186 @@
-# minecraft_skin_bot
+# minecraft_skinbot
 
-Resolve, preview and share Minecraft skins in Telegram. The mobile Mini App provides interactive 3D viewing.
+Look up Minecraft Java Edition skins in Telegram, switch preview images in chat, and inspect frozen textures in a 3D Mini App. Bot handlers, rendering, storage, and static viewer hosting run on [Telegram Serverless](https://core.telegram.org/bots/serverless). No separate bot process or rendering service is required. See [live verification](#live-verification) for cloud and client checks.
 
-## Features
+## Usage
 
-- Send a Minecraft username or UUID directly to the bot.
-- Preview the head, front, side, back and a Front / Side / Back three-view.
-- Download the exact original PNG, including legacy 64×32 skins.
-- Share Skin, Three-view, Head and Original Skin through Inline Mode.
-- Upload a 64×64 or 64×32 PNG and open its temporary 3D viewer.
-- Rotate, zoom, reset, toggle the outer layer and select Idle, Walk or Run in 3D.
-- View Classic / Slim models and official capes.
-- Use English or Simplified Chinese automatically from Telegram or browser language.
+Send a username or UUID in a private chat:
 
-## Telegram setup
-
-1. Create a bot with [@BotFather](https://t.me/BotFather) using `/newbot`. Supply its token through `TELEGRAM_BOT_TOKEN`.
-2. Enable Inline Mode with `/setinline`. Set the placeholder to `Minecraft username or UUID`.
-3. Open `/mybots` → your bot → Bot Settings → Configure Mini App → Enable Mini App. Set the HTTPS viewer URL as the Main Mini App URL. Keep launch URLs on that configured origin. The `startapp` deep link serves inline results shared to groups and channels; results opened in the sender's private chat use an in-message `web_app` button instead and need no Main Mini App. `/setmenubutton` can also expose the viewer in private chats.
-4. Create a private cache channel, add the bot as an administrator with **Post Messages**, and set the complete signed numeric chat ID returned by Telegram in `TELEGRAM_CACHE_CHAT_ID` (usually beginning with `-100`). A private chat can also serve as the cache after its user sends `/start` to the bot. The bot uploads technical media there to obtain reusable Telegram `file_id` values. This configuration enables all four inline results, including the original PNG document.
-5. Host the viewer and public API over HTTPS. Set `MINI_APP_URL` to the viewer and `PUBLIC_BASE_URL` to the public API origin, including any reverse proxy prefix. Build the viewer with `VITE_API_BASE_URL` when the API uses a separate origin.
-
-Startup checks access to the media cache chat, then registers `/start` and `/help`. In private chats, query a player with `Notch` or `069a79f444e94726a5befca90e38aaf5`. In groups and channels, mention the bot in your message or skin file caption. Use `@your_bot Notch` in any chat to share a result. The inline results button opens the interactive viewer for that player.
-
-## Run the bot
-
-Python 3.12–3.14 and [uv](https://docs.astral.sh/uv/) are supported.
-
-```sh
-uv sync --frozen
-uv run minecraft-skin-bot
+```text
+Notch
+069a79f4-44e9-4726-a5be-fca90e38aaf5
+/head Notch
+/view Notch
 ```
 
-Supply environment variables through your process manager or shell. `.env.example` lists the supported variables. The application reads the process environment directly.
+In groups and channels, mention the bot or address commands to its username. `/start` and `/help` show usage.
 
-| Variable | Purpose |
+Lookup cards use Telegram Rich Messages with a preview, player identity, skin model, optional cape details, and view/share controls. **Front**, **Back**, **Head**, **Three-view**, and **Original** switch the displayed media without changing the card's texture snapshot or resolving the player again. **Original** sends the unchanged CDN PNG as a document; Telegram preview photos are not lossless originals. **Side** is available within Three-view, not as a separate button. Each card also links directly to the selected view and to the unchanged skin (and cape) PNG, and copies the player UUID when the card has one. `/view` opens a card with Three-view selected.
+
+**3D** opens the interactive viewer through a URL button on the Telegram-hosted viewer. The card controls are Rich Message `buttons` blocks, not Inline keyboards.
+
+### Inline Mode
+
+```text
+@your_skin_bot Notch
+@your_skin_bot head Notch
+@your_skin_bot view Notch
+@your_skin_bot texture:<token>
+```
+
+Inline results offer cached Front, Three-view, Head, and Original choices. Cold queries return a preparing result; repeat the query once media is ready. Partially cached queries return available choices immediately.
+
+Editing an Inline card, including a prepared share, requires its trusted binding from a `chosen_inline_result` update. Authenticated Mini App access alone does not establish ownership of an Inline message. Other chat members can operate a bound card. User-uploaded PNGs are not supported.
+
+## 3D viewer and sharing
+
+The static viewer uses [skinview3d](https://github.com/bs-community/skinview3d) for Classic and Slim skins, legacy 64×32 textures, official capes, rotation, zoom, skin layers, and Idle/Walk/Run animations. Legacy 64×32 body previews use Classic geometry. A viewer-only model override does not change the saved texture reference.
+
+A fixed texture reference has this format:
+
+```text
+<model>-<skin-CDN-hash>[-<cape-CDN-hash>]
+```
+
+`<model>` is `c` (Classic), `s` (Slim), or `u` (Unknown). Each hash is 32–64 lowercase hexadecimal characters referencing `https://textures.minecraft.net/texture/`. A fixed reference does not follow subsequent player skin changes.
+
+| Launch | URL or behavior |
 | --- | --- |
-| `TELEGRAM_BOT_TOKEN` | Required BotFather token |
-| `TELEGRAM_CACHE_CHAT_ID` | Required media cache channel/chat ID |
-| `MINI_APP_URL` | Required HTTPS viewer URL |
-| `PUBLIC_BASE_URL` | Required public HTTPS API base URL |
-| `CACHE_DIR` | Disposable content cache directory; default `cache` |
-| `API_HOST` | API bind address; default `127.0.0.1` |
-| `API_PORT` | API bind port; default `8080` |
-| `API_UNIX_SOCKET` | Absolute unix socket path; replaces the TCP listener when set |
-| `API_UNIX_SOCKET_GROUP` | Group granted access to that unix socket |
-| `TELEGRAM_WEBHOOK_URL` | Optional public HTTPS update endpoint; unset uses polling |
-| `TELEGRAM_WEBHOOK_SECRET` | Optional webhook secret; generated at startup when unset |
-| `UPLOAD_TTL_SECONDS` | Upload availability; default `86400`, minimum `60` |
-| `TELEGRAM_RICH_MESSAGES` | Rich Message enhancement; default `true`; use `false` for classic photo messages |
+| Browser or public link | `https://app<app_id>.tgcloud.ai/?texture=<token>` |
+| Main Mini App link | `https://t.me/<bot_username>?startapp=c-<card-id>` |
+| Main Mini App without a reference | Username or UUID lookup inside Telegram |
 
-A listening socket inherited through systemd socket activation (`LISTEN_FDS`) takes precedence over `API_UNIX_SOCKET`, `API_HOST` and `API_PORT`.
+Public links also accept `lang`. Private-chat Mini App launches include `card=<id>` to retrieve the frozen player name and UUID. `startapp=t-<token>` is supported for compatibility. All referenced launches open the 3D viewer. Without a reference, the Main Mini App allows lookup inside Telegram but does not select a player automatically.
 
-HTTP viewer/API URLs are supported on localhost for development.
+Public texture links work without Telegram authentication. In Telegram, lookup, saved-card access, and prepared sharing require platform-verified `initData`. Textures load from Mojang's CDN with CORS; a missing cape does not block skin rendering.
 
-## Run the viewer
+On clients supporting `shareMessage`, the viewer prepares an Original document or Three-view card for Telegram's chat chooser. Other clients fall back to `switchInlineQuery` or a copyable query and bot link. Sharing remains available when WebGL fails.
 
-Node.js 24 (24.20+) and npm 11.19.0 are supported. `web/package-lock.json` pins the dependency tree.
-
-```sh
-cd web
-npm ci
-npm run dev
-npm run build
-```
-
-Serve `web/dist` from any static host. The API supplies the bot username resolved at startup through Telegram `getMe`; the viewer uses it for Telegram links and external-browser sharing. A viewer URL accepts `?uuid=<32-character UUID>`, `?upload=<SHA-256>` or `?texture=<token>`, plus an optional `lang` that carries the sender's language into Mini Apps. Main Mini App deep links also carry the same selector through `startapp`, using `t-<token>` for fixed textures.
-
-Fixed skin links use `?texture=<model>-<skin-CDN-hash>[-<cape-CDN-hash>]`, with `c`, `s` or `u` for Classic, Slim or Unknown. Their Main Mini App selector is `t-<token>` and their API route is `/api/texture/<token>`. These links carry everything needed to reload the original textures from the official CDN after local cache deletion. They do not follow later player skin changes. Profile responses provide the canonical `texture:<token>` as `snapshot_reference`; upload responses use `null`.
-
-For a separate API host, build with:
-
-```sh
-VITE_API_BASE_URL=https://api.example.com npm run build
-```
-
-The API permits the viewer's configured origin through CORS. The public viewer loads content by UUID or hash. Telegram authentication is unnecessary for this public content.
+The viewer gets the bot username from the authenticated backend. `VITE_BOT_USERNAME` is optional for sharing from an ordinary browser. Authenticated endpoint requests have a 20-second client wait limit, without automatic retries or server-side cancellation.
 
 ## Languages
 
-The bot uses each Telegram update's language code. The viewer uses Telegram's display language, or browser language preferences when opened outside Telegram. Mini Apps launched from an inline result or keyboard button arrive without Telegram user data, so the bot appends the sender's language to the viewer URL as `lang`; a real Telegram display language still wins whenever the client reports one. `zh`, `zh-CN`, `zh-SG` and `zh-Hans` select Simplified Chinese; other languages fall back to English. Player names, UUIDs and share queries keep their original values. Language selection lasts for the current update or viewer page. Three-view images retain their shared Front / Side / Back labels; captions and controls use the selected language.
+English and Simplified Chinese are supported. The bot uses the sender's Telegram language. The viewer prefers Telegram's user language, then `lang` in the URL; ordinary browsers can use their language preferences. `zh`, `zh-CN`, `zh-SG`, and `zh-Hans` select Simplified Chinese; other unsupported languages fall back to English.
 
-English messages are source strings. Python translations live in `bot/src/minecraft_skin_bot/locales/zh_Hans/LC_MESSAGES/messages.po`; the viewer's translations live in `web/src/i18n.ts`. Compile the Python catalog after editing:
-
-```sh
-uv run pybabel compile -d bot/src/minecraft_skin_bot/locales -D messages
-```
-
-Commit the compiled `messages.mo` with its `.po` source. Wheels and Nix packages include both files. Nix checks verify installed translations and reproducible catalog compilation.
+Translations live in `tgcloud/lib/telegram/i18n.js` and `web/src/i18n.ts`. Three-view image labels use Front / Side / Back.
 
 ## Architecture
 
-`Telegram → SkinService → Minecraft provider → PNG parser / static renderer → content cache`
+- `tgcloud/handlers/`: message, channel post, Inline, chosen-result, and callback handlers.
+- `tgcloud/endpoints/`: authenticated `lookupSkin`, `getCard`, and `prepareShare` JSON endpoints. They resolve and save cards, read card data, and prepare user-bound `PreparedInlineMessage` shares; they do not expose public image URLs.
+- `tgcloud/lib/`: Mojang lookup, Telegram Bot API and database operations through the official `sdk`, plus the PNG renderer and media cache. The renderer uses local ESM adapted from fast-png 8.0.0 without Node built-ins or runtime package installation.
+- `tgcloud/schema.js`: immutable texture snapshots, card identities, trusted Inline bindings, typed Telegram file references, and cache cooldowns.
+- `web/`: Vite-built viewer, published from `web/dist` by `tgcloud.jsonc`.
 
-The same Python process receives updates through polling or an optional webhook and runs a thin aiohttp API. The browser uses `skinview3d` with its compatible Three.js version. The Bot generates PNG previews; the browser handles 3D rendering and interaction.
+Mojang profile lookups validate texture metadata against the requested player and restrict texture URLs to the official CDN host and hash path.
 
-Content caches contain immutable textures, generated previews and Telegram media IDs. Their keys include the texture SHA-256, model, render type and renderer version. Concurrent requests share downloads, rendering and Telegram uploads. Profile lookups expire after 60 seconds so skin changes receive fresh texture references.
+On a cache miss, the backend validates, renders, and uploads media to the configured cache group or channel. Cache hits reuse the bot's typed `photo` and `document` file IDs. Backend PNG input is limited to 64 KiB, 64×64 or 64×32 pixels, non-interlaced 8-bit data, and no animation, text, or ICC-profile chunks. The browser viewer allows up to 1 MiB for decoding; a texture accepted there may still fail backend validation.
 
-Missing player responses are cached for 30 seconds. Mojang HTTP 429 responses start a cooldown for that upstream host, using `Retry-After` seconds or an HTTP date, capped at five minutes; absent or invalid values use 30 seconds. Requests during the cooldown receive an immediate rate-limit error with the remaining wait rather than sleeping. The public API returns HTTP 429 and a `Retry-After` header. Other upstream failures can be retried normally.
+The cache's eight-second admission lease is not an upload timeout. Uploads and database writes are not atomic, so interrupted operations can leave orphan or duplicate cache messages. See the [media-cache contract](tgcloud/lib/telegram/README.md) for cooldowns, file-ID repair, and recovery behavior.
 
-Uploaded PNGs use content-addressed storage with a 24-hour default TTL. Uploading the same bytes renews that content's availability. Their viewer and inline links expire with the cached content; send the PNG again to renew them. Cache deletion causes profile content to be fetched and generated again, and uploaded content to be supplied again. Viewer links carry their complete UUID or content reference; manually entered usernames resolve to UUIDs.
+Retain the [PNG codec licenses](tgcloud/lib/skin/vendor/LICENSES.txt), [codec provenance](tgcloud/lib/skin/vendor/provenance.json), and [label attribution](web/src/skin/NOTICE.md).
 
-Upload cards and the viewer show the current content's expiration time. The API exposes it as `upload_expires_at`, a Unix timestamp in UTC derived from the stored file's modification time and upload TTL. Reading a link does not renew it. Profile responses use `null` for this field.
+## Development
 
-## Telegram UX
-
-Bot API 10.3 Rich Messages provide a heading, image, compact profile details and embedded action buttons on supported clients. Telegram provides no public automatic client capability check. Send `skin Notch` for a standard photo message, or set `TELEGRAM_RICH_MESSAGES=false` for that layout throughout the bot, including Inline Skin. An unavailable Rich Message method also falls back to a photo. Initial upload previews use standard photos.
-
-Head, Front, Back, Side, Three-view and Original actions rewrite the message they were pressed on: a Rich Message keeps its layout through a rich edit, and a photo or document message is edited in place. Pressing the same action again leaves the message as is. When Telegram rejects the rich edit, the message falls back to the standard photo or document with the inline keyboard menu, and when no edit is possible at all the render is sent as a new standard message.
-
-Inline Mode supplies Skin, Three-view, Head and Original Skin. Skin uses a cached photo result with Rich Message content. Three-view and Head use cached photos; Original Skin uses a cached document. Each result carries an `Open 3D` action: an in-message `web_app` button when the result is bound to the sender's private chat with the bot, and a Main Mini App `startapp` deep link in every other chat, because Telegram accepts `web_app` buttons only in private chats. A Rich Message copies the UUID from the paragraph that displays it, so the duplicate `Copy UUID` keyboard button appears only in the standard photo and document layouts. `InlineQueryResultsButton.web_app` launches the query's viewer. Inline callbacks rebuild the view from its UUID or upload hash and edit the shared message in place.
-
-Inline preparation has a six-second total budget and reserves two seconds for answering Telegram. Cached media remain usable while uncached results are prepared concurrently. Slow uploads or Telegram rate limits return the available results and a 3D viewer entry; the next query can reuse completed media. Telegram upload cooldowns avoid repeatedly calling a rate-limited method.
-
-Opening 3D or sharing a profile's skin uses its fixed texture reference. Preview callbacks on a UUID card continue to resolve that player's current skin and refresh the card's links together. A fixed texture card provides 3D and sharing actions without callbacks that exceed Telegram's 64-byte callback limit.
-
-Opening the Mini App without a skin reference shows a username or UUID form. It accepts Java Edition usernames and UUIDs with or without hyphens, resolves them through `/api/profile/<player>`, and uses the resolved UUID for sharing and retries. Invalid links also offer the form so a player can be entered directly.
-
-The Mini App uses `Telegram.WebApp.switchInlineQuery` (6.7+) for **Share Skin** and **Share Three-view**, with queries such as `skin <uuid>` and `view <uuid>`. Plain browser viewing offers a copyable inline query and a Telegram bot link. Telegram's `shareMessage` uses a user-bound prepared message; this public viewer uses inline sharing instead.
-
-## Data sources and contracts
-
-- Username resolution: `https://api.mojang.com/users/profiles/minecraft/<username>`.
-- Profiles: `https://sessionserver.mojang.com/session/minecraft/profile/<uuid>`.
-- Textures: `https://textures.minecraft.net/texture/<hash>`.
-
-These official endpoints were checked against live responses on 2026-10-05. Mojang provides limited public documentation for these Java Edition endpoints, so the implementation validates response identity and texture metadata. An absent model field on an official skin means Classic; `slim` means Slim; other metadata means Unknown. Unavailable public textures receive a concise error. Uploads retain an Unknown label unless the legacy format establishes Classic; both previews and the 3D viewer inspect modern arm geometry when model metadata is unavailable.
-
-An unavailable or invalid official cape leaves the skin available for preview, download and sharing. Cape downloads have a three-second budget. The API sets `cape_unavailable` when a declared cape cannot be loaded, and the viewer offers a retry. A profile without a declared cape has `cape_unavailable: false`.
-
-Texture downloads accept only the official CDN host and hash path, normalize HTTP references to HTTPS, reject redirects and enforce a 1 MiB limit. Uploaded PNGs require validated 64×64 or 64×32 dimensions before decoding. Cache paths are derived from hashes. The API exposes content PNGs and clean errors.
-
-References: [Bot API](https://core.telegram.org/bots/api), [Inline Mode](https://core.telegram.org/bots/inline), [Mini Apps](https://core.telegram.org/bots/webapps), [aiogram](https://docs.aiogram.dev/en/latest/), [skinview3d](https://github.com/bs-community/skinview3d).
-
-## Deployment
-
-Run one Python process and serve `web/dist` statically. Route `/api/` and `/healthz` to `127.0.0.1:8080` through your HTTPS reverse proxy. [deploy/nginx.conf](deploy/nginx.conf) provides the route layout. Set the API bind address to `0.0.0.0` when running the supplied container:
+Requires Node.js 24.21+ (24.x) and npm 12.2.0. The root lockfile pins `@tgcloud/cli` to 0.2.0.
 
 ```sh
-docker build -t minecraft-skin-bot .
-docker run --env-file .env -e API_HOST=0.0.0.0 -p 127.0.0.1:8080:8080 minecraft-skin-bot
+npm ci --ignore-scripts
+npm exec -- tgcloud --version
+npm --prefix web ci --ignore-scripts
+npm --prefix web run dev
 ```
 
-The container runs as an unprivileged user. `/app/cache` can use a writable volume. Polling supports one active bot process; horizontally scaled polling requires a separate delivery design. With `TELEGRAM_WEBHOOK_URL`, proxy that URL's path to the same listener. The application registers the webhook and its generated secret at startup; `TELEGRAM_WEBHOOK_SECRET` supplies an explicit secret when needed.
+The CLI should report `0.2.0`. Open the development viewer with a `?texture=<token>` query; it loads CDN textures without a local bot backend.
 
-## Nix packaging and NixOS deployment
+Nix users can run `nix develop`, `nix build .#web`, and `nix flake check` for the development shell, viewer build, and package check. These commands do not test or deploy Telegram modules.
 
-The flake packages the bot from `uv.lock` with uv2nix and Python 3.12. The viewer uses `package-lock.json` through `importNpmLock`; dependency integrity comes directly from that lock file.
-
-flake-parts organizes package outputs in `nix/packages.nix`, development tools and checks in `nix/dev/`, and NixOS exports in `nix/nixos.nix`.
+### Local checks
 
 ```sh
-nix build .#bot
-nix build .#web
-nix flake check
-nix develop
+npm run verify
+npm --prefix web run lint
+npm --prefix web run typecheck
+npm --prefix web test
+npm run build:web
+npm run check:static
+npm --prefix web run test:e2e
 ```
 
-`bot` provides the `minecraft-skin-bot` executable. `web` contains static assets for same-origin hosting. The development shell provides the locked Python environment, uv and Node.js 24.
+`verify` checks imports and configuration against the pinned CLI schema and runs SDK-mocked tests. Renderer tests cover Classic/Slim golden images, PNG decoding, and legacy geometry. Browser tests use fixture textures and a simulated Telegram bridge. `check:static` checks the built viewer, including `index.html`.
 
-Import `nixosModules.default` from this flake into your NixOS configuration:
+The browser tests need Chromium. Install it with `cd web && npm exec -- playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a compatible browser executable.
 
-```nix
-{ inputs, ... }:
-{
-  imports = [ inputs.minecraft-skin-bot.nixosModules.default ];
-  services.minecraft-skin-bot = {
-    enable = true;
-    tokenFile = "/run/secrets/minecraft-skin-bot-token";
-    cacheChatId = -1001234567890;
-    miniAppUrl = "https://skin.example.com";
-    publicBaseUrl = "https://skin.example.com";
-    nginx = {
-      enable = true;
-      hostName = "skin.example.com";
-    };
-  };
-}
-```
+## Configuration and deployment
 
-Supply `tokenFile` as a quoted runtime path managed by your secret manager. systemd loads that file as a credential and the startup wrapper supplies `TELEGRAM_BOT_TOKEN` inside the bot process. The service uses a dynamic user and disposable content storage at `/var/cache/minecraft-skin-bot`.
+Use an isolated bot and cache chat for initial live testing. Production deployment changes Telegram resources and database state; arrange a backup and rollback procedure before proceeding. Each credential, migration, and deployment target needs the bot owner's authorization.
 
-The optional nginx integration builds the viewer with `publicBaseUrl`, serves static assets and proxies `/api/` and `/healthz`. With `nginx.enable = true` the bot drops the TCP listener: the module creates a systemd socket unit at `/run/minecraft-skin-bot/api.sock` (mode `0660`, group `services.nginx.group`) and passes its descriptor to the bot, which accepts it through systemd socket activation instead of creating the socket itself. nginx proxies that socket directly, and a service restart no longer interrupts the listener. The Bot API supplies the bot username at startup. Configure HTTPS certificates on that nginx virtual host using your existing certificate or ACME setup. `webhookUrl` selects webhook delivery and adds its path to the nginx proxy; unset uses polling. `apiHost` and `apiPort` only configure the direct listener used when the nginx integration is off; `uploadTtlSeconds`, `richMessages`, `package` and `webPackage` provide deployment overrides.
+1. **Connect the bot.** In [@BotFather](https://t.me/BotFather), enable Serverless and obtain the token under **Serverless → CLI Access → Access token**. This is not a Bot API token. From the repository root:
 
-## Verification
+   ```sh
+   npm exec -- tgcloud login
+   npm exec -- tgcloud fetch
+   npm exec -- tgcloud status
+   npm exec -- tgcloud diff
+   ```
 
-```sh
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest
-cd web
-npm ci
-npm run lint
-npm run typecheck
-npm test
-npm run build
-npm run test:e2e
-```
+   Keep `.tgcloud/` ignored and credentials out of code, frontend variables, shell arguments, screenshots, and chat. `fetch` refreshes the cloud snapshot without overwriting working files. `status` and `diff` compare against that snapshot rather than querying live state. `diff` covers modules; `status` also tracks static build changes.
 
-Backend tests cover provider failures, texture URL validation, content changes, concurrent cache work, cache deletion, uploaded PNG validation, UV mappings, golden previews and inline result types. Viewer tests cover public content loading, mobile controls, theme, resize and sharing. Telegram client availability, BotFather settings and cache channel permissions are verified in the deployed account.
+2. **Configure the cache and viewer.** Add the bot as an administrator to a cache group or channel with permission to post photos and documents. In `tgcloud/lib/settings.js`, set:
 
-Before launch, check Android and iOS Telegram WebViews with a Classic and Slim profile: touch rotate/zoom, cape, outer layer, safe areas, theme, reset, resize, and both inline share actions. Automated mobile Chromium tests provide browser coverage; actual Telegram client verification is a deployment check.
+   - `cacheChatId`: the signed numeric group/channel ID, nonzero with absolute value below `2^52`. `null` disables media delivery.
+   - `viewerBaseUrl`: the selected app's `https://app<app_id>.tgcloud.ai/` URL. The checked-in value is `https://app8840308217.tgcloud.ai/`.
+
+   Keep the URL associated with the selected app. The backend obtains the bot ID and username from `getMe`; it cannot derive the hosting URL there.
+
+3. **Build the viewer.** Supply the public bot username, without `@`, for anonymous-browser Inline sharing:
+
+   ```sh
+   VITE_BOT_USERNAME=your_skin_bot npm run build:web
+   npm run check:static
+   npm run verify
+   ```
+
+   `tgcloud push` uploads the built `web/dist`; it does not build it.
+
+4. **Review and apply the schema.** Inspect the proposed changes before deploying handlers that need them:
+
+   ```sh
+   npm exec -- tgcloud migrate --local --dry-run
+   ```
+
+   Required tables are `snapshots`, `media_cache`, `cache_target`, `cards`, and `inline_bindings`, including `snapshots.skin_height`. Preserve existing rows. Apply only additive changes compatible with the deployed code; stop for drops, renames, manual steps, or an unknown target.
+
+   ```sh
+   npm exec -- tgcloud migrate --local
+   ```
+
+   Confirm the additions succeeded before deployment. `--local` uses the reviewed local schema; bare `migrate` uses the deployed schema. Do not bypass review with `--yes` or `--safe`. Migration and code deployment are not atomic.
+
+5. **Deploy after reviewing the diff.** Recheck `status` and `diff` after local changes. A full push removes cloud modules missing from the local project, so stop if it would delete unrelated modules.
+
+   ```sh
+   npm exec -- tgcloud status
+   npm exec -- tgcloud diff
+   npm exec -- tgcloud push
+   npm exec -- tgcloud migrate --dry-run
+   ```
+
+   Confirm that the published Mini App URL matches `viewerBaseUrl` and no required schema changes remain. On a concurrency conflict, review again rather than using `--force`. Do not use `pull` or `reset` to discard another operator's work.
+
+6. **Configure BotFather.** Enable Inline Mode with `/setinline`, and use `/setinlinefeedback` to report **100%** of chosen results. Register the viewer URL as the bot's **Main Mini App**, so non-private viewer links work. Optionally set `/start`, `/help`, `/skin`, `/head`, and `/view` with `/setcommands` and configure the private-chat menu button.
+
+`tgcloud run` executes modules on Telegram's platform and can send messages or modify the database. It is not an offline test.
+
+## Live verification
+
+Local tests cannot establish Telegram Serverless transport limits or client compatibility. Before production rollout, verify with a test bot and cache chat:
+
+- Real PNG fetches, photo/document uploads, cached file-ID reuse, and error handling.
+- `chosen_inline_result` updates with `inline_message_id` for Rich-only Inline results and prepared shares. An unbound callback must remain unavailable.
+- Viewer URL buttons from Rich cards (private chats, groups, channels, Inline cards, and business messages) and Main Mini App links.
+- `shareMessage`, Inline-query fallbacks, CDN loading, and sharing when WebGL is unavailable on supported Telegram clients.
+
+## References
+
+[Telegram Serverless](https://core.telegram.org/bots/serverless) · [Bot API](https://core.telegram.org/bots/api) · [Inline Mode](https://core.telegram.org/bots/inline) · [Mini Apps](https://core.telegram.org/bots/webapps)

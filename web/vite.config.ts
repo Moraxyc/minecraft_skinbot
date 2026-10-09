@@ -7,7 +7,4 @@ export default defineConfig({
     restoreMocks: true,
     clearMocks: true,
   },
-  server: {
-    proxy: { '/api': 'http://127.0.0.1:8080' },
-  },
 });
