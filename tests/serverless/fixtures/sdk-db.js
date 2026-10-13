@@ -79,7 +79,10 @@ export function sql(pieces, ...values) {
   const nodes = [];
   pieces.forEach((piece, position) => {
     if (piece) nodes.push({ text: piece });
-    if (position < values.length) nodes.push(node(values[position]));
+    if (position < values.length) {
+      const value = values[position];
+      nodes.push(isColumn(value) ? { text: quote(value.name) } : node(value));
+    }
   });
   return fragment(nodes);
 }

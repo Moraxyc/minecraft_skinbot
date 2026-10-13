@@ -77,7 +77,7 @@ async function acceptInlineTarget(inlineMessageId, card, clicker) {
   if (!Number.isSafeInteger(clicker?.id) || clicker.id <= 0 || card.inlineUserId !== clicker.id) return false;
   await db.run(sql`INSERT INTO inline_bindings (inline_message_id, card_id)
     SELECT ${inlineMessageId}, cards.id FROM cards JOIN snapshots ON snapshots.id = cards.snapshot_id
-    WHERE ${cards.id} = ${card.id} AND ${cards.inlineUserId} = ${clicker.id}
+    WHERE cards.id = ${card.id} AND cards.inline_user_id = ${clicker.id}
     ON CONFLICT(inline_message_id) DO NOTHING`);
   const created = await db.select({ cardId: inlineBindings.cardId }).from(inlineBindings)
     .where(eq(inlineBindings.inlineMessageId, inlineMessageId)).get();
