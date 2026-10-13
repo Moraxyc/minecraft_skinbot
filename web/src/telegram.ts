@@ -28,7 +28,7 @@ export function endpointsAvailable(app: TelegramWebApp | undefined): app is Tele
   return Boolean(app?.initData && app.Serverless);
 }
 
-export function callEndpoint<Result>(app: TelegramWebApp, name: string, input: Record<string, unknown>): Promise<Result> {
+export function callEndpoint<Result>(app: TelegramWebApp, name: string, input: object): Promise<Result> {
   return new Promise((resolve, reject) => {
     if (!endpointsAvailable(app)) {
       reject(new Error('Open this Mini App in Telegram.'));
@@ -36,7 +36,7 @@ export function callEndpoint<Result>(app: TelegramWebApp, name: string, input: R
     }
     const timeout = window.setTimeout(() => reject(new Error('The server did not respond. Try again.')), 20_000);
     try {
-      app.Serverless.call(name, input, (error, result) => {
+      app.Serverless.call(name, { ...input }, (error, result) => {
         window.clearTimeout(timeout);
         if (error) reject(error);
         else resolve(result as Result);
