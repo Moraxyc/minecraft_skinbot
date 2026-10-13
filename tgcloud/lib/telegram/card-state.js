@@ -1,5 +1,5 @@
 import { db } from 'sdk';
-import { and, eq, sql } from 'sdk/db';
+import { eq, sql } from 'sdk/db';
 import { cards, inlineBindings, snapshots } from '../../schema.js';
 import { decodeSnapshot, encodeSnapshot, isUsername, normalizeUUID } from '../minecraft/reference.js';
 import { rememberSnapshot } from './snapshots.js';
@@ -66,43 +66,41 @@ export async function readCardByToken(token) {
   return row ? readCard(row.id) : null;
 }
 
-export async function bindChosenInlineResult(chosen) {
-  const action = parseAction(chosen?.result_id);
-  if (!action || typeof chosen.inline_message_id !== 'string' || !chosen.inline_message_id
-    || !Number.isSafeInteger(chosen.from?.id) || chosen.from.id <= 0) return false;
-  const card = await readCard(action.id);
-  if (!card || card.inlineUserId !== chosen.from.id) return false;
+// An Inline message exposes no chat reference and its callback data is caller
+// controlled, so the target is accepted lazily: only the card's own creator may
+// create the binding, the first accepted callback pins the message to that card,
+// and chat members may afterwards operate the pinned card.
+async function acceptInlineTarget(inlineMessageId, card, clicker) {
+  const bound = await db.select({ cardId: inlineBindings.cardId }).from(inlineBindings)
+    .where(eq(inlineBindings.inlineMessageId, inlineMessageId)).get();
+  if (bound) return bound.cardId === card.id;
+  if (!Number.isSafeInteger(clicker?.id) || clicker.id <= 0 || card.inlineUserId !== clicker.id) return false;
   await db.run(sql`INSERT INTO inline_bindings (inline_message_id, card_id)
-    SELECT ${chosen.inline_message_id}, cards.id FROM cards JOIN snapshots ON snapshots.id = cards.snapshot_id
-    WHERE ${cards.id} = ${card.id} AND ${cards.inlineUserId} = ${chosen.from.id}
+    SELECT ${inlineMessageId}, cards.id FROM cards JOIN snapshots ON snapshots.id = cards.snapshot_id
+    WHERE ${cards.id} = ${card.id} AND ${cards.inlineUserId} = ${clicker.id}
     ON CONFLICT(inline_message_id) DO NOTHING`);
-  const row = await db.select({ cardId: inlineBindings.cardId }).from(inlineBindings)
-    .where(eq(inlineBindings.inlineMessageId, chosen.inline_message_id)).get();
-  return row?.cardId === card.id;
+  const created = await db.select({ cardId: inlineBindings.cardId }).from(inlineBindings)
+    .where(eq(inlineBindings.inlineMessageId, inlineMessageId)).get();
+  return created?.cardId === card.id;
 }
 
 export async function cardForCallback(callback) {
   const action = parseAction(callback?.data);
   if (!action) return null;
-  let target;
   if (callback.inline_message_id !== undefined) {
     if (callback.message !== undefined || typeof callback.inline_message_id !== 'string'
       || !callback.inline_message_id) return null;
-    const binding = await db.select({ cardId: inlineBindings.cardId }).from(inlineBindings)
-      .where(and(eq(inlineBindings.inlineMessageId, callback.inline_message_id), eq(inlineBindings.cardId, action.id)))
-      .get();
-    if (!binding) return null;
-    target = { inline_message_id: callback.inline_message_id };
-  } else {
-    const message = callback.message;
-    if (!Number.isSafeInteger(message?.date) || message.date <= 0
-      || !Number.isSafeInteger(message.message_id) || message.message_id <= 0
-      || !Number.isSafeInteger(message.chat?.id) || message.chat.id === 0
-      || !Array.isArray(message.rich_message?.blocks)
-      || !message.rich_message.blocks.some((block) => block?.type === 'buttons' && Array.isArray(block.buttons)
-        && block.buttons.some((button) => button?.callback_data === callback.data))) return null;
-    target = { chat_id: message.chat.id, message_id: message.message_id };
+    const card = await readCard(action.id);
+    if (!card || !await acceptInlineTarget(callback.inline_message_id, card, callback.from)) return null;
+    return { card, view: action.view, target: { inline_message_id: callback.inline_message_id } };
   }
+  const message = callback.message;
+  if (!Number.isSafeInteger(message?.date) || message.date <= 0
+    || !Number.isSafeInteger(message.message_id) || message.message_id <= 0
+    || !Number.isSafeInteger(message.chat?.id) || message.chat.id === 0
+    || !Array.isArray(message.rich_message?.blocks)
+    || !message.rich_message.blocks.some((block) => block?.type === 'buttons' && Array.isArray(block.buttons)
+      && block.buttons.some((button) => button?.callback_data === callback.data))) return null;
   const card = await readCard(action.id);
-  return card ? { card, view: action.view, target } : null;
+  return card ? { card, view: action.view, target: { chat_id: message.chat.id, message_id: message.message_id } } : null;
 }

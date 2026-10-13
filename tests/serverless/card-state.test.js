@@ -27,7 +27,7 @@ mock.module('sdk', {
 });
 
 const schema = await import('../../tgcloud/schema.js');
-const { createCard, readCard, cardAction, bindChosenInlineResult, cardForCallback } =
+const { createCard, readCard, cardAction, cardForCallback } =
   await import('../../tgcloud/lib/telegram/card-state.js');
 const snapshot = { model: 'slim', skinHash: 'a'.repeat(64), capeHash: 'b'.repeat(64) };
 const uuid = '069a79f444e94726a5befca90e38aaf5';
@@ -43,8 +43,8 @@ function ordinary(data, blocks = [{ type: 'buttons', buttons: [{ text: 'Head', c
   };
 }
 
-function chosen(card, target = 'inline-message-1', userId = 17) {
-  return { result_id: cardAction(card.id, 'front'), inline_message_id: target, from: { id: userId }, query: 'Notch' };
+function inline(card, target = 'inline-message-1', userId = 17, view = 'head') {
+  return { data: cardAction(card.id, view), inline_message_id: target, from: { id: userId } };
 }
 
 beforeEach(() => {
@@ -103,44 +103,42 @@ test('ordinary callbacks require the exact accessible Rich button and keep the s
   assert.throws(() => cardAction(card.id, 'head\n'), TypeError);
 });
 
-test('only chosen results for the prepared sender create durable inline bindings, never unknown callbacks', async () => {
+test('only the card creator binds an Inline message, which then pins one card for every member', async () => {
   const card = await createCard(profile(), { inlineUserId: 17 });
-  const ordinaryCard = await createCard(profile());
-  const callback = { data: cardAction(card.id, 'head'), inline_message_id: 'inline-message-1', from: { id: 18 } };
+  const other = await createCard({ ...profile('OtherPlayer'), snapshot: { ...snapshot, skinHash: 'c'.repeat(64) } }, { inlineUserId: 17 });
+  const anonymousCard = await createCard(profile());
   const changes = database.prepare('SELECT total_changes() AS count').get().count;
-  assert.equal(await cardForCallback(callback), null);
+  assert.equal(await cardForCallback(inline(card, 'inline-message-1', 18)), null);
+  assert.equal(await cardForCallback(inline(anonymousCard, 'inline-message-1', 17)), null);
+  assert.equal(await cardForCallback(inline(card, 'inline-message-1', 0)), null);
+  assert.equal(await cardForCallback({ data: cardAction(999, 'head'), inline_message_id: 'inline-message-1', from: { id: 17 } }), null);
   assert.equal(database.prepare('SELECT total_changes() AS count').get().count, changes);
-  assert.equal(await bindChosenInlineResult(chosen(card, 'inline-message-1', 18)), false);
-  assert.equal(await bindChosenInlineResult(chosen(ordinaryCard)), false);
-  assert.equal(await bindChosenInlineResult({ ...chosen(card), result_id: cardAction(999, 'front') }), false);
-  assert.equal(await bindChosenInlineResult({ ...chosen(card), inline_message_id: undefined }), false);
-  assert.equal(await bindChosenInlineResult({ ...chosen(card), result_id: 'c:1:front\n' }), false);
-  assert.equal(database.prepare('SELECT COUNT(*) AS count FROM inline_bindings').get().count, 0);
-  assert.equal(await bindChosenInlineResult(chosen(card)), true);
-  assert.equal(await bindChosenInlineResult(chosen(card)), true);
-  assert.equal(await bindChosenInlineResult(chosen(card, 'inline-message-2')), true);
-  const restarted = await import('../../tgcloud/lib/telegram/card-state.js?restart-inline');
-  assert.deepEqual(await restarted.cardForCallback(callback), {
+  assert.deepEqual(await cardForCallback(inline(card)), {
     card, view: 'head', target: { inline_message_id: 'inline-message-1' },
   });
-  assert.equal((await restarted.cardForCallback({ ...callback, inline_message_id: 'inline-message-2' })).card.id, card.id);
-  assert.equal(await restarted.cardForCallback({ ...callback, inline_message_id: 'unknown-target' }), null);
-  assert.equal(await restarted.cardForCallback({ ...callback, message: ordinary(callback.data).message }), null);
+  assert.equal((await cardForCallback(inline(card))).card.id, card.id);
+  assert.deepEqual(await cardForCallback(inline(card, 'inline-message-2', 17, 'skin')), {
+    card, view: 'skin', target: { inline_message_id: 'inline-message-2' },
+  });
+  assert.equal(database.prepare('SELECT COUNT(*) AS count FROM inline_bindings').get().count, 2);
+  const restarted = await import('../../tgcloud/lib/telegram/card-state.js?restart-inline');
+  assert.equal((await restarted.cardForCallback(inline(other, 'inline-message-1', 17))), null);
+  assert.equal((await restarted.cardForCallback(inline(card, 'inline-message-1', 48))).card.id, card.id);
+  assert.equal(await restarted.cardForCallback(inline(card, 'unknown-target', 18)), null);
+  assert.equal(await restarted.cardForCallback({ ...inline(card), message: ordinary(cardAction(card.id, 'head')).message }), null);
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM inline_bindings').get().count, 2);
 });
 
-test('concurrent conflicting chosen events cannot replace an existing target binding or redirect its card', async () => {
+test('concurrent conflicting first callbacks cannot bind one Inline message to two cards', async () => {
   const first = await createCard(profile(), { inlineUserId: 17 });
   const second = await createCard({ ...profile('OtherPlayer'), snapshot: { ...snapshot, skinHash: 'c'.repeat(64) } }, { inlineUserId: 17 });
-  const results = await Promise.all([bindChosenInlineResult(chosen(first)), bindChosenInlineResult(chosen(second))]);
+  const results = await Promise.all([cardForCallback(inline(first)), cardForCallback(inline(second))]);
   assert.equal(results.filter(Boolean).length, 1);
   const bound = results[0] ? first : second;
   const rejected = results[0] ? second : first;
-  const callback = { inline_message_id: 'inline-message-1', data: cardAction(bound.id, 'back') };
-  assert.equal((await cardForCallback(callback)).card.token, bound.token);
-  assert.equal(await cardForCallback({ ...callback, data: cardAction(rejected.id, 'back') }), null);
-  assert.equal(await bindChosenInlineResult(chosen(rejected)), false);
-  assert.equal((await cardForCallback(callback)).card.id, bound.id);
+  assert.equal((await cardForCallback(inline(bound, 'inline-message-1', 17, 'back'))).card.token, bound.token);
+  assert.equal(await cardForCallback(inline(rejected, 'inline-message-1', 17, 'back')), null);
+  assert.equal((await cardForCallback(inline(bound, 'inline-message-1', 17, 'back'))).card.id, bound.id);
 });
 
 test('storage failures and missing parents cannot publish orphan cards or inline bindings without foreign keys', async () => {
@@ -160,7 +158,7 @@ test('storage failures and missing parents cannot publish orphan cards or inline
   beforeWrite = (sql) => {
     if (sql.startsWith('INSERT INTO inline_bindings')) database.exec('DELETE FROM cards');
   };
-  assert.equal(await bindChosenInlineResult(chosen(card)), false);
+  assert.equal(await cardForCallback(inline(card)), null);
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM inline_bindings').get().count, 0);
   assert.equal(await readCard(card.id), null);
 });

@@ -30,7 +30,7 @@ Lookup cards use Telegram Rich Messages with a preview, player identity, skin mo
 
 Inline results offer cached Front, Three-view, Head, and Original choices. Cold queries return a preparing result; repeat the query once media is ready. Partially cached queries return available choices immediately.
 
-Editing an Inline card, including a prepared share, requires its trusted binding from a `chosen_inline_result` update. Authenticated Mini App access alone does not establish ownership of an Inline message. Other chat members can operate a bound card. User-uploaded PNGs are not supported.
+Rich-only Inline cards carry no keyboard, and an Inline message exposes no chat reference, so its target is bound lazily: the card creator's first button press pins that message to one card, and only the creator may create the binding. Authenticated Mini App access alone does not establish ownership of an Inline message. Other chat members can operate the pinned card afterwards, while unknown or unbound targets stay unavailable. User-uploaded PNGs are not supported.
 
 ## 3D viewer and sharing
 
@@ -66,7 +66,7 @@ Translations live in `tgcloud/lib/telegram/i18n.js` and `web/src/i18n.ts`. Three
 
 ## Architecture
 
-- `tgcloud/handlers/`: message, channel post, Inline, chosen-result, and callback handlers.
+- `tgcloud/handlers/`: message, channel post, Inline, and callback handlers.
 - `tgcloud/endpoints/`: authenticated `lookupSkin`, `getCard`, and `prepareShare` JSON endpoints. They resolve and save cards, read card data, and prepare user-bound `PreparedInlineMessage` shares; they do not expose public image URLs.
 - `tgcloud/lib/`: Mojang lookup, Telegram Bot API and database operations through the official `sdk`, plus the PNG renderer and media cache. The renderer uses local ESM adapted from fast-png 8.0.0 without Node built-ins or runtime package installation.
 - `tgcloud/schema.js`: immutable texture snapshots, card identities, trusted Inline bindings, typed Telegram file references, and cache cooldowns.
@@ -165,7 +165,7 @@ Use an isolated bot and cache chat for initial live testing. Production deployme
 
    Confirm that the published Mini App URL matches `viewerBaseUrl` and no required schema changes remain. On a concurrency conflict, review again rather than using `--force`. Do not use `pull` or `reset` to discard another operator's work.
 
-6. **Configure BotFather.** Enable Inline Mode with `/setinline`, and use `/setinlinefeedback` to report **100%** of chosen results. Register the viewer URL as the bot's **Main Mini App**, so non-private viewer links work. Optionally set `/start`, `/help`, `/skin`, `/head`, and `/view` with `/setcommands` and configure the private-chat menu button.
+6. **Configure BotFather.** Enable Inline Mode with `/setinline`. Register the viewer URL as the bot's **Main Mini App**, so non-private viewer links work. Optionally set `/start`, `/help`, `/skin`, `/head`, and `/view` with `/setcommands` and configure the private-chat menu button.
 
 `tgcloud run` executes modules on Telegram's platform and can send messages or modify the database. It is not an offline test.
 
@@ -174,7 +174,7 @@ Use an isolated bot and cache chat for initial live testing. Production deployme
 Local tests cannot establish Telegram Serverless transport limits or client compatibility. Before production rollout, verify with a test bot and cache chat:
 
 - Real PNG fetches, photo/document uploads, cached file-ID reuse, and error handling.
-- `chosen_inline_result` updates with `inline_message_id` for Rich-only Inline results and prepared shares. An unbound callback must remain unavailable.
+- Button callbacks from Rich-only Inline results and prepared shares must carry `inline_message_id`; lazy binding depends on it. The creator's first press must bind the message and edit it, another member must then be able to operate the pinned card, and a non-creator press on an unbound message must stay unavailable.
 - Viewer URL buttons from Rich cards (private chats, groups, channels, Inline cards, and business messages) and Main Mini App links.
 - `shareMessage`, Inline-query fallbacks, CDN loading, and sharing when WebGL is unavailable on supported Telegram clients.
 

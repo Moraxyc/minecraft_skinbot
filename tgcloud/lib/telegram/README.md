@@ -43,8 +43,10 @@ not a completion guarantee.
 `invalidateMedia(ref)` invalidates only the exact typed file ID and generation.
 `withMedia(plan, options, consume)` repairs an attributable invalid file ID once;
 unrelated or unexpected failures propagate to the caller's recovery boundary.
-Consumers must not infer an Inline target binding from a callback: unknown
-Inline targets fail closed through the independent card-state contract.
+Consumers must not infer an Inline target binding from a callback. The
+independent card-state contract accepts one lazily instead: only the card
+creator's first callback may create the binding, the first accepted binding
+pins the message to one card, and unknown or mismatched targets fail closed.
 
 
 ## Verified source geometry

@@ -87,7 +87,6 @@ const { default: message } = await import('../../tgcloud/handlers/message.js');
 const { default: channelPost } = await import('../../tgcloud/handlers/channel_post.js');
 const { default: inlineQuery } = await import('../../tgcloud/handlers/inline_query.js');
 const { default: callbackQuery } = await import('../../tgcloud/handlers/callback_query.js');
-const { default: chosenInlineResult } = await import('../../tgcloud/handlers/chosen_inline_result.js');
 const { default: lookupSkin } = await import('../../tgcloud/endpoints/lookupSkin.js');
 const { default: getCard } = await import('../../tgcloud/endpoints/getCard.js');
 const { default: prepareShare } = await import('../../tgcloud/endpoints/prepareShare.js');
@@ -164,6 +163,10 @@ function callback(data, original, language = 'en') {
   };
 }
 
+function inlineCallback(data, userId, inlineMessageId = 'inline-message-1') {
+  return { id: 'callback-1', data, from: { id: userId, language_code: 'en' }, inline_message_id: inlineMessageId };
+}
+
 function sentMessage() {
   const params = calls.findLast((call) => call.method === 'sendRichMessage').params;
   return { ...params, message_id: 42, date: 1, chat: { id: 7, type: 'private' } };
@@ -228,7 +231,7 @@ test('Mini App sharing preserves the looked-up snapshot and binds to the verifie
   const sharedCardId = Number(saved.result.id.split(':')[1]);
   assert.equal(database.prepare('SELECT inline_user_id FROM cards WHERE id = ?').get(sharedCardId).inline_user_id, 17);
   assert.deepEqual(Buffer.from(mediaCalls().at(-1).params.document.bytes), originalBytes);
-  await chosenInlineResult({ result_id: saved.result.id, inline_message_id: 'prepared-inline', from: { id: 17 } });
+  await callbackQuery(inlineCallback(saved.result.id, 17, 'prepared-inline'));
   assert.equal(database.prepare('SELECT card_id FROM inline_bindings WHERE inline_message_id = ?').get('prepared-inline').card_id, sharedCardId);
 });
 
@@ -309,30 +312,39 @@ test('cold Inline and callback acknowledge before byte production and await comp
   assert.equal(calls.filter((call) => call.method === 'editMessageText').length, 1);
 });
 
-test('native chosen binding permits other group members but rejects missing, unknown and wrong-sender targets', async () => {
+test('lazy Inline binding is pinned by the creators first click and then admits every member', async () => {
   await inlineQuery(query(`texture:${token}`));
   await inlineQuery(query(`texture:${token}`));
   const result = calls.findLast((call) => call.method === 'answerInlineQuery').params.results[0];
   const data = cardAction(result, 'head');
   calls.length = 0;
-  await callbackQuery(callback(data));
+  requests.length = 0;
+  await callbackQuery(inlineCallback(data, 18));
   assert.equal(calls.length, 1);
-  await chosenInlineResult({ result_id: result.id, from: { id: 18 }, inline_message_id: 'inline-message-1' });
-  await callbackQuery(callback(data));
+  assert.equal(calls[0].method, 'answerCallbackQuery');
+  assert.equal(calls[0].params.show_alert, true);
   assert.equal(calls.filter((call) => call.method === 'editMessageText').length, 0);
-  await chosenInlineResult({ result_id: result.id, from: { id: 17 } });
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM inline_bindings').get().count, 0);
-  await chosenInlineResult({ result_id: result.id, from: { id: 17 }, inline_message_id: 'inline-message-1' });
   calls.length = 0; requests.length = 0;
-  await callbackQuery(callback(data));
+  await callbackQuery(inlineCallback(data, 17));
+  assert.equal(database.prepare('SELECT card_id FROM inline_bindings WHERE inline_message_id = ?')
+    .get('inline-message-1').card_id, Number(result.id.split(':')[1]));
+  assert.equal(calls.filter((call) => call.method === 'answerCallbackQuery').length, 1);
+  assert.equal(calls.find((call) => call.method === 'answerCallbackQuery').params.text, undefined);
   assert.equal(calls.filter((call) => call.method === 'editMessageText').length, 1,
-    'Chosen native binding must authorize one frozen Rich edit for another group member');
+    'The creator click that creates the binding must also edit the frozen Rich message');
   const edited = calls.find((call) => call.method === 'editMessageText').params;
   assert.equal(edited.inline_message_id, 'inline-message-1');
   assert.equal(edited.chat_id, undefined);
   assert.equal(requests.length + mediaCalls().length, 0);
-  await callbackQuery({ ...callback(data), inline_message_id: 'unbound-target' });
+  calls.length = 0;
+  await callbackQuery(inlineCallback(data, 18));
+  assert.equal(calls.filter((call) => call.method === 'editMessageText').length, 1,
+    'A bound Inline message must authorize one frozen Rich edit for another group member');
+  await callbackQuery(inlineCallback(data, 18, 'unbound-target'));
   assert.equal(calls.filter((call) => call.method === 'editMessageText').length, 1);
+  assert.equal(calls.at(-1).method, 'answerCallbackQuery');
+  assert.equal(calls.at(-1).params.show_alert, true);
 });
 
 test('partial Inline returns cached choices before waiting for missing producers', async () => {
