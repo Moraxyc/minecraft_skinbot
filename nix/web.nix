@@ -15,7 +15,6 @@ let
       ../web/index.html
       ../web/tsconfig.json
       ../web/vite.config.ts
-      ../web/playwright.config.ts
       ../web/.oxlintrc.json
       ../tgcloud/lib/skin/renderer.js
       ../tgcloud/lib/skin/renderer.d.ts

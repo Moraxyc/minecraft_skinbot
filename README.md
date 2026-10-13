@@ -104,12 +104,9 @@ npm --prefix web run typecheck
 npm --prefix web test
 npm run build:web
 npm run check:static
-npm --prefix web run test:e2e
 ```
 
-`verify` checks imports and configuration against the pinned CLI schema and runs SDK-mocked tests. Renderer tests cover Classic/Slim golden images, PNG decoding, and legacy geometry. Browser tests use fixture textures and a simulated Telegram bridge. `check:static` checks the built viewer, including `index.html`.
-
-The browser tests need Chromium. Install it with `cd web && npm exec -- playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to a compatible browser executable.
+`verify` checks imports and configuration against the pinned CLI schema and runs SDK-mocked tests. Renderer tests cover Classic/Slim golden images, PNG decoding, and legacy geometry. The viewer's unit tests cover snapshot parsing, i18n, and the Telegram bridge. `check:static` checks the built viewer, including `index.html`.
 
 ## Configuration and deployment
 

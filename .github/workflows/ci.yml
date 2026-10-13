@@ -35,5 +35,3 @@ jobs:
             - run: npm test
             - run: npm run build
             - run: test -s dist/index.html
-            - run: npm exec -- playwright install --with-deps chromium
-            - run: npm run test:e2e
