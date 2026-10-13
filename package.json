@@ -18,7 +18,7 @@
     "@tgcloud/cli": "0.2.0",
     "acorn": "8.15.0",
     "ajv": "8.18.0",
-    "esbuild": "0.25.12",
+    "esbuild": "0.28.2",
     "fast-png": "8.0.0",
     "fflate": "0.8.3",
     "iobuffer": "6.0.1",
